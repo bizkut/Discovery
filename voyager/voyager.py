@@ -166,37 +166,59 @@ class Voyager:
         self.last_events = None
 
     def reset(self, task, context="", reset_env=True):
+        """
+        エージェントを初期化し、新しいタスクを開始する準備をする関数
+        環境のリセット、初期メッセージの設定を行う
+        """
+        # エージェントの試行回数をリセット
         self.action_agent_rollout_num_iter = 0
+        
+        # タスクとコンテキストを設定
         self.task = task
         self.context = context
+        
         if reset_env:
+            # 環境をソフトリセット
             self.env.reset(
                 options={
                     "mode": "soft",
                     "wait_ticks": self.env_wait_ticks,
                 }
             )
+            
+        # 難易度の設定（完了タスク数に応じて調整）
         difficulty = (
             "easy" if len(self.curriculum_agent.completed_tasks) > 15 else "peaceful"
         )
-        # step to peek an observation
+        
+        # 時間設定と難易度設定のコマンドを実行
         events = self.env.step(
             "bot.chat(`/time set ${getNextTime()}`);\n"
             + f"bot.chat('/difficulty {difficulty}');"
         )
+        
+        # コンテキストに関連するスキルを取得
         skills = self.skill_manager.retrieve_skills(query=self.context)
         print(
             f"\033[33mRender Action Agent system message with {len(skills)} skills\033[0m"
         )
+        
+        # システムメッセージとヒューマンメッセージを生成
         system_message = self.action_agent.render_system_message(skills=skills)
         human_message = self.action_agent.render_human_message(
             events=events, code="", task=self.task, context=context, critique=""
         )
+        
+        # メッセージを設定
         self.messages = [system_message, human_message]
         print(
             f"\033[32m****Action Agent human message****\n{human_message.content}\033[0m"
         )
+        
+        # メッセージが正しく設定されていることを確認
         assert len(self.messages) == 2
+        
+        # 会話履歴をクリア
         self.conversations = []
         return self.messages
 
@@ -204,23 +226,46 @@ class Voyager:
         self.env.close()
 
     def step(self):
+        """
+        エージェントの1ステップを実行する関数
+        AIによるコード生成、実行、評価、次のステップの準備を行う
+        """
+        # エージェントが初期化されているか確認
         if self.action_agent_rollout_num_iter < 0:
             raise ValueError("Agent must be reset before stepping")
+            
+        # AIモデルからの応答を取得
         ai_message = self.action_agent.llm(self.messages)
         print(f"\033[34m****Action Agent ai message****\n{ai_message.content}\033[0m")
+        
+        # 会話履歴を保存
         self.conversations.append(
             (self.messages[0].content, self.messages[1].content, ai_message.content)
         )
+        
+        # AIメッセージからコードを抽出
         parsed_result = self.action_agent.process_ai_message(message=ai_message)
         success = False
+        
         if isinstance(parsed_result, dict):
+            # 有効なコードが生成された場合の処理
+            
+            # プログラムコードと実行コードを結合
             code = parsed_result["program_code"] + "\n" + parsed_result["exec_code"]
+            
+            # 環境内でコードを実行
             events = self.env.step(
                 code,
                 programs=self.skill_manager.programs,
             )
+            
+            # イベントを記録
             self.recorder.record(events, self.task)
+            
+            # チェストの内容を更新
             self.action_agent.update_chest_memory(events[-1][1]["nearbyChests"])
+            
+            # タスク成功の判定
             success, critique = self.critic_agent.check_task_success(
                 events=events,
                 task=self.task,
@@ -230,26 +275,35 @@ class Voyager:
             )
 
             if self.reset_placed_if_failed and not success:
-                # revert all the placing event in the last step
+                # タスク失敗時に設置したブロックを元に戻す処理
                 blocks = []
                 positions = []
                 for event_type, event in events:
                     if event_type == "onSave" and event["onSave"].endswith("_placed"):
+                        # 設置されたブロックの情報を収集
                         block = event["onSave"].split("_placed")[0]
                         position = event["status"]["position"]
                         blocks.append(block)
                         positions.append(position)
+                        
+                # 設置したブロックを回収するコードを実行
                 new_events = self.env.step(
                     f"await givePlacedItemBack(bot, {U.json_dumps(blocks)}, {U.json_dumps(positions)})",
                     programs=self.skill_manager.programs,
                 )
+                
+                # 最新のインベントリと地形情報で更新
                 events[-1][1]["inventory"] = new_events[-1][1]["inventory"]
                 events[-1][1]["voxels"] = new_events[-1][1]["voxels"]
+                
+            # 関連スキルの取得
             new_skills = self.skill_manager.retrieve_skills(
                 query=self.context
                 + "\n\n"
                 + self.action_agent.summarize_chatlog(events)
             )
+            
+            # 次のステップのためのメッセージを準備
             system_message = self.action_agent.render_system_message(skills=new_skills)
             human_message = self.action_agent.render_human_message(
                 events=events,
@@ -258,37 +312,59 @@ class Voyager:
                 context=self.context,
                 critique=critique,
             )
+            
+            # 最新のイベントとメッセージを保存
             self.last_events = copy.deepcopy(events)
             self.messages = [system_message, human_message]
         else:
+            # コード生成に失敗した場合の処理
             assert isinstance(parsed_result, str)
             self.recorder.record([], self.task)
             print(f"\033[34m{parsed_result} Trying again!\033[0m")
+            
+        # メッセージが正しく設定されていることを確認
         assert len(self.messages) == 2
+        
+        # 試行回数をカウントアップ
         self.action_agent_rollout_num_iter += 1
+        
+        # 終了条件の判定（最大試行回数に達したか、タスク成功）
         done = (
             self.action_agent_rollout_num_iter >= self.action_agent_task_max_retries
             or success
         )
+        
+        # 結果情報の準備
         info = {
             "task": self.task,
             "success": success,
             "conversations": self.conversations,
         }
+        
         if success:
+            # タスク成功時はプログラム情報を追加
             assert (
                 "program_code" in parsed_result and "program_name" in parsed_result
             ), "program and program_name must be returned when success"
             info["program_code"] = parsed_result["program_code"]
             info["program_name"] = parsed_result["program_name"]
         else:
+            # タスク失敗時は次のメッセージを表示
             print(
                 f"\033[32m****Action Agent human message****\n{self.messages[-1].content}\033[0m"
             )
+            
         return self.messages, 0, done, info
 
     def rollout(self, *, task, context, reset_env=True):
+        """
+        タスクを完了するまでstep関数を繰り返し実行する関数
+        タスクが成功するか最大試行回数に達するまで実行を続ける
+        """
+        # エージェントをリセットして新しいタスクを開始
         self.reset(task=task, context=context, reset_env=reset_env)
+        
+        # タスクが完了するまでステップを繰り返す
         while True:
             messages, reward, done, info = self.step()
             if done:
@@ -296,8 +372,12 @@ class Voyager:
         return messages, reward, done, info
 
     def learn(self, reset_env=True):
+        """
+        カリキュラムエージェントが生成したタスクを学習する関数
+        タスクの生成、実行、スキルの保存を行う
+        """
         if self.resume:
-            # keep the inventory
+            # 再開時はインベントリを維持
             self.env.reset(
                 options={
                     "mode": "soft",
