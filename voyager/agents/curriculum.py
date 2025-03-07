@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import random
 import re
+import os
+import shutil
 
 import voyager.utils as U
 from voyager.prompts import load_prompt
@@ -41,7 +43,21 @@ class CurriculumAgent:
         ], f"mode {mode} not supported"
         self.mode = mode
         self.ckpt_dir = ckpt_dir
+        
+        # resume=Falseの場合、既存のckptディレクトリをクリーンアップ
+        if not resume:
+            curriculum_dir = f"{ckpt_dir}/curriculum"
+            if os.path.exists(curriculum_dir):
+                print(f"\033[33mCleaning up existing curriculum directory: {curriculum_dir}\033[0m")
+                try:
+                    shutil.rmtree(curriculum_dir)
+                    print(f"\033[32mSuccessfully removed curriculum directory\033[0m")
+                except Exception as e:
+                    print(f"\033[31mFailed to remove curriculum directory: {e}\033[0m")
+        
+        # 必要なディレクトリ構造を作成
         U.f_mkdir(f"{ckpt_dir}/curriculum/vectordb")
+        
         if resume:
             print(f"\033[35mLoading Curriculum Agent from {ckpt_dir}/curriculum\033[0m")
             self.completed_tasks = U.load_json(
