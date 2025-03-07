@@ -18,30 +18,32 @@ class Voyager:
     def __init__(
         self,
         mc_port: int = None,
+        mc_host: str = "host.docker.internal",
         azure_login: Dict[str, str] = None,
         server_port: int = 3000,
+        server_host: str = "http://127.0.0.1",
         openai_api_key: str = None,
         env_wait_ticks: int = 20,
         env_request_timeout: int = 600,
         max_iterations: int = 160,
         reset_placed_if_failed: bool = False,
-        action_agent_model_name: str = "gpt-4",
+        action_agent_model_name: str = "gpt-4o-mini",
         action_agent_temperature: float = 0,
         action_agent_task_max_retries: int = 4,
         action_agent_show_chat_log: bool = True,
         action_agent_show_execution_error: bool = True,
-        curriculum_agent_model_name: str = "gpt-4",
+        curriculum_agent_model_name: str = "gpt-4o-mini",
         curriculum_agent_temperature: float = 0,
-        curriculum_agent_qa_model_name: str = "gpt-3.5-turbo",
+        curriculum_agent_qa_model_name: str = "gpt-4o-mini",
         curriculum_agent_qa_temperature: float = 0,
         curriculum_agent_warm_up: Dict[str, int] = None,
         curriculum_agent_core_inventory_items: str = r".*_log|.*_planks|stick|crafting_table|furnace"
         r"|cobblestone|dirt|coal|.*_pickaxe|.*_sword|.*_axe",
         curriculum_agent_mode: str = "auto",
-        critic_agent_model_name: str = "gpt-4",
+        critic_agent_model_name: str = "gpt-4o-mini",
         critic_agent_temperature: float = 0,
         critic_agent_mode: str = "auto",
-        skill_manager_model_name: str = "gpt-3.5-turbo",
+        skill_manager_model_name: str = "gpt-4o-mini",
         skill_manager_temperature: float = 0,
         skill_manager_retrieval_top_k: int = 5,
         openai_api_request_timeout: int = 240,
@@ -50,29 +52,29 @@ class Voyager:
         resume: bool = False,
     ):
         """
-        The main class for Voyager.
-        Action agent is the iterative prompting mechanism in paper.
-        Curriculum agent is the automatic curriculum in paper.
-        Critic agent is the self-verification in paper.
-        Skill manager is the skill library in paper.
-        :param mc_port: minecraft in-game port
-        :param azure_login: minecraft login config
-        :param server_port: mineflayer port
-        :param openai_api_key: openai api key
-        :param env_wait_ticks: how many ticks at the end each step will wait, if you found some chat log missing,
-        you should increase this value
-        :param env_request_timeout: how many seconds to wait for each step, if the code execution exceeds this time,
-        python side will terminate the connection and need to be resumed
-        :param reset_placed_if_failed: whether to reset placed blocks if failed, useful for building task
-        :param action_agent_model_name: action agent model name
-        :param action_agent_temperature: action agent temperature
-        :param action_agent_task_max_retries: how many times to retry if failed
-        :param curriculum_agent_model_name: curriculum agent model name
-        :param curriculum_agent_temperature: curriculum agent temperature
-        :param curriculum_agent_qa_model_name: curriculum agent qa model name
-        :param curriculum_agent_qa_temperature: curriculum agent qa temperature
-        :param curriculum_agent_warm_up: info will show in curriculum human message
-        if completed task larger than the value in dict, available keys are:
+        Voyagerのメインクラス。
+        Action agentは論文中の反復的プロンプトメカニズムです。
+        Curriculum agentは論文中の自動カリキュラムです。
+        Critic agentは論文中の自己検証です。
+        Skill managerは論文中のスキルライブラリです。
+        :param mc_port: マインクラフトのゲーム内ポート
+        :param mc_host: マインクラフトのホスト名またはIP（Docker環境では通常"host.docker.internal"）
+        :param azure_login: マインクラフトのログイン設定
+        :param server_port: mineflayerのポート
+        :param server_host: mineflayerのホスト（Docker環境では"http://127.0.0.1"を使用）
+        :param openai_api_key: OpenAI APIキー
+        :param env_wait_ticks: 各ステップの最後に待機するtick数。チャットログが欠けている場合はこの値を増やす必要があります
+        :param env_request_timeout: 各ステップの待機秒数。コード実行がこの時間を超えた場合、Python側で接続を終了し、再開が必要になります
+        :param reset_placed_if_failed: 失敗時に設置したブロックをリセットするかどうか。建築タスクに有用です
+        :param action_agent_model_name: action agentのモデル名
+        :param action_agent_temperature: action agentの温度
+        :param action_agent_task_max_retries: 失敗時の最大リトライ回数
+        :param curriculum_agent_model_name: curriculum agentのモデル名
+        :param curriculum_agent_temperature: curriculum agentの温度
+        :param curriculum_agent_qa_model_name: curriculum agent QAのモデル名
+        :param curriculum_agent_qa_temperature: curriculum agent QAの温度
+        :param curriculum_agent_warm_up: カリキュラムのヒューマンメッセージに表示される情報
+        辞書内の値より完了タスクが多い場合に表示されます。利用可能なキー:
         {
             "context": int,
             "biome": int,
@@ -86,24 +88,25 @@ class Voyager:
             "chests": int,
             "optional_inventory_items": int,
         }
-        :param curriculum_agent_core_inventory_items: only show these items in inventory before optional_inventory_items
-        reached in warm up
-        :param curriculum_agent_mode: "auto" for automatic curriculum, "manual" for human curriculum
-        :param critic_agent_model_name: critic agent model name
-        :param critic_agent_temperature: critic agent temperature
-        :param critic_agent_mode: "auto" for automatic critic ,"manual" for human critic
-        :param skill_manager_model_name: skill manager model name
-        :param skill_manager_temperature: skill manager temperature
-        :param skill_manager_retrieval_top_k: how many skills to retrieve for each task
-        :param openai_api_request_timeout: how many seconds to wait for openai api
-        :param ckpt_dir: checkpoint dir
-        :param skill_library_dir: skill library dir
-        :param resume: whether to resume from checkpoint
+        :param curriculum_agent_core_inventory_items: ウォームアップでoptional_inventory_itemsに到達する前に表示するアイテムのみ
+        :param curriculum_agent_mode: "auto"で自動カリキュラム、"manual"で手動カリキュラム
+        :param critic_agent_model_name: critic agentのモデル名
+        :param critic_agent_temperature: critic agentの温度
+        :param critic_agent_mode: "auto"で自動批評、"manual"で手動批評
+        :param skill_manager_model_name: skill managerのモデル名
+        :param skill_manager_temperature: skill managerの温度
+        :param skill_manager_retrieval_top_k: 各タスクで取得するスキルの数
+        :param openai_api_request_timeout: OpenAI APIの待機秒数
+        :param ckpt_dir: チェックポイントディレクトリ
+        :param skill_library_dir: スキルライブラリディレクトリ
+        :param resume: チェックポイントから再開するかどうか
         """
         # init env
         self.env = VoyagerEnv(
             mc_port=mc_port,
+            mc_host=mc_host,
             azure_login=azure_login,
+            server_host=server_host,
             server_port=server_port,
             request_timeout=env_request_timeout,
         )
