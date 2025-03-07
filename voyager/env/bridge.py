@@ -19,6 +19,7 @@ class VoyagerEnv(gym.Env):
     def __init__(
         self,
         mc_port=None,
+        mc_host="host.docker.internal",  # Minecraftホストのデフォルト値
         azure_login=None,
         server_host="http://127.0.0.1",
         server_port=3000,
@@ -32,6 +33,7 @@ class VoyagerEnv(gym.Env):
                 "Both mc_port and mc_login are specified, mc_port will be ignored"
             )
         self.mc_port = mc_port
+        self.mc_host = mc_host  # Minecraftホストを保存
         self.azure_login = azure_login
         self.server = f"{server_host}:{server_port}"
         self.server_port = server_port
@@ -72,35 +74,56 @@ class VoyagerEnv(gym.Env):
 
     def check_process(self):
         if self.mc_instance and not self.mc_instance.is_running:
-            # if self.mc_instance:
-            #     self.mc_instance.check_process()
-            #     if not self.mc_instance.is_running:
-            print("Starting Minecraft server")
+            print("Minecraft process has exited, restarting")
             self.mc_instance.run()
-            self.mc_port = self.mc_instance.port
-            self.reset_options["port"] = self.mc_instance.port
-            print(f"Server started on port {self.reset_options['port']}")
+            if not self.mc_instance.is_running:
+                raise RuntimeError("Minecraft process failed to start")
+        
+        # Mineflayerサーバーの状態確認と起動
         retry = 0
+        max_retries = 3
         while not self.mineflayer.is_running:
             print("Mineflayer process has exited, restarting")
             self.mineflayer.run()
             if not self.mineflayer.is_running:
-                if retry > 3:
-                    raise RuntimeError("Mineflayer process failed to start")
+                if retry >= max_retries:
+                    raise RuntimeError("Mineflayer process failed to start after multiple attempts")
                 else:
+                    retry += 1
+                    print(f"リトライ {retry}/{max_retries}")
+                    time.sleep(2)  # リトライ前に少し待機
                     continue
             print(self.mineflayer.ready_line)
-            res = requests.post(
-                f"{self.server}/start",
-                json=self.reset_options,
-                timeout=self.request_timeout,
-            )
-            if res.status_code != 200:
-                self.mineflayer.stop()
-                raise RuntimeError(
-                    f"Minecraft server reply with code {res.status_code}"
+            
+            # リクエスト送信前に接続情報を再確認
+            print(f"Mineflayerサーバーに送信するリクエスト: {self.reset_options}")
+            print(f"接続先: {self.reset_options.get('host', 'localhost')}:{self.reset_options.get('port', 'N/A')}")
+            
+            try:
+                res = requests.post(
+                    f"{self.server}/start",
+                    json=self.reset_options,
+                    timeout=self.request_timeout,
                 )
-            return res.json()
+                if res.status_code != 200:
+                    print(f"エラー: サーバーから {res.status_code} コードが返されました")
+                    self.mineflayer.stop()
+                    if retry >= max_retries:
+                        raise RuntimeError(f"Minecraft server reply with code {res.status_code}")
+                    retry += 1
+                    print(f"リトライ {retry}/{max_retries}")
+                    time.sleep(2)
+                    continue
+                return res.json()
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                print(f"接続エラー: {e}")
+                self.mineflayer.stop()
+                if retry >= max_retries:
+                    raise RuntimeError(f"Failed to connect to mineflayer server: {e}")
+                retry += 1
+                print(f"リトライ {retry}/{max_retries}")
+                time.sleep(3)  # 接続エラー後は少し長めに待機
+                continue
 
     def step(
         self,
@@ -141,6 +164,7 @@ class VoyagerEnv(gym.Env):
 
         self.reset_options = {
             "port": self.mc_port,
+            "host": self.mc_host,  # mc_host の値を追加
             "reset": options.get("mode", "hard"),
             "inventory": options.get("inventory", {}),
             "equipment": options.get("equipment", []),
