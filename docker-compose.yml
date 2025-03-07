@@ -17,7 +17,7 @@ services:
       - SECRET_VALUE=${SECRET_VALUE}
     ports:
       - "3000:3000" # prismarine-viewerポート（Minecraftビューア用）
-      - "25565:25565" # Minecraftサーバーポート
+      - "${MINECRAFT_PORT:-25565}:${MINECRAFT_PORT:-25565}" # Minecraftサーバーポート（環境変数から自動設定）
     extra_hosts:
       - "host.docker.internal:host-gateway" # ホストマシンのMinecraftクライアントに接続するため
     tty: true
