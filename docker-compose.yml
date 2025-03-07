@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  voyager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    volumes:
+      - .:/app
+      - ./data:/app/data
+    environment:
+      - MINECRAFT_PORT=${MINECRAFT_PORT:-25565}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CLIENT_ID=${CLIENT_ID}
+      - REDIRECT_URL=${REDIRECT_URL:-https://127.0.0.1/auth-response}
+      - SECRET_VALUE=${SECRET_VALUE}
+    ports:
+      - "3000:3000" # prismarine-viewerポート（Minecraftビューア用）
+      - "25565:25565" # Minecraftサーバーポート
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # ホストマシンのMinecraftクライアントに接続するため
+    tty: true
+    stdin_open: true 
