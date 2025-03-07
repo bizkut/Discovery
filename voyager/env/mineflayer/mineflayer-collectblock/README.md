@@ -11,7 +11,6 @@
 </p>
 
 ---
-## This is a modified version to better support Voyager
 
 ## Showcase
 
