@@ -2,11 +2,10 @@ import { Bot } from 'mineflayer'
 import { Callback } from './CollectBlock'
 import { Vec3 } from 'vec3'
 import { error } from './Util'
-import { Item } from 'prismarine-item'
 import { goals } from 'mineflayer-pathfinder'
 import { callbackify } from 'util'
 
-export type ItemFilter = (item: Item) => boolean
+export type ItemFilter = (item: any) => boolean
 
 function getClosestChest (bot: Bot, chestLocations: Vec3[]): Vec3 | null {
   let chest = null
