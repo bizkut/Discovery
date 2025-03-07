@@ -31,14 +31,13 @@ WORKDIR /app
 COPY . .
 
 # mineflayer-collectblockの依存関係をインストールしてコンパイル
-WORKDIR /app/voyager/env/mineflayer/mineflayer-collectblock
-RUN npm install && \
-    npm run build
-#npx tsc
+#WORKDIR /app/voyager/env/mineflayer/mineflayer-collectblock
+#RUN npm install && \
+#    npx tsc
 
 # 親ディレクトリに移動してmineflayerの依存関係をインストール
-WORKDIR /app/voyager/env/mineflayer
-RUN npm install
+#WORKDIR /app/voyager/env/mineflayer
+#RUN npm install
 
 # 作業ディレクトリをルートに戻す
 WORKDIR /app
