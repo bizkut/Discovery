@@ -11,16 +11,21 @@ from voyager.prompts import load_prompt
 from voyager.control_primitives_context import load_control_primitives_context
 
 
+# ActionAgentクラス
+# Minecraftのような環境で自律的に行動するエージェントを実装するクラス
+# LLM（大規模言語モデル）を使用して環境の観察から適切な行動を決定し、JavaScriptコードとして出力する
 class ActionAgent:
+    # 初期化メソッド
+    # エージェントの設定と必要なリソースを初期化する
     def __init__(
         self,
-        model_name="gpt-3.5-turbo",
-        temperature=0,
-        request_timout=120,
-        ckpt_dir="ckpt",
-        resume=False,
-        chat_log=True,
-        execution_error=True,
+        model_name="gpt-3.5-turbo",  # 使用するLLMモデル名
+        temperature=0,               # 生成の多様性を制御するパラメータ
+        request_timout=120,          # APIリクエストのタイムアウト時間（秒）
+        ckpt_dir="ckpt",             # チェックポイントディレクトリ
+        resume=False,                # 以前の状態から再開するかどうか
+        chat_log=True,               # チャットログを含めるかどうか
+        execution_error=True,        # 実行エラーを含めるかどうか
     ):
         self.ckpt_dir = ckpt_dir
         self.chat_log = chat_log
@@ -37,6 +42,8 @@ class ActionAgent:
             request_timeout=request_timout,
         )
 
+    # チェストメモリを更新するメソッド
+    # 環境内のチェストの位置と内容を記録・更新する
     def update_chest_memory(self, chests):
         for position, chest in chests.items():
             if position in self.chest_memory:
@@ -53,6 +60,8 @@ class ActionAgent:
                     self.chest_memory[position] = chest
         U.dump_json(self.chest_memory, f"{self.ckpt_dir}/action/chest_memory.json")
 
+    # チェスト観察結果をテキスト形式でレンダリングするメソッド
+    # 記録されているチェストの情報を人間が読める形式に整形する
     def render_chest_observation(self):
         chests = []
         for chest_position, chest in self.chest_memory.items():
@@ -72,6 +81,9 @@ class ActionAgent:
         else:
             return f"Chests: None\n\n"
 
+    # システムメッセージを生成するメソッド
+    # LLMに送信するシステムプロンプトを構築する
+    # 基本スキルとカスタムスキルを含める
     def render_system_message(self, skills=[]):
         system_template = load_prompt("action_template")
         # FIXME: Hardcoded control_primitives
@@ -99,6 +111,9 @@ class ActionAgent:
         assert isinstance(system_message, SystemMessage)
         return system_message
 
+    # ヒューマンメッセージを生成するメソッド
+    # LLMに送信する観察結果や状態情報を構築する
+    # エージェントの現在の状況を詳細に記述する
     def render_human_message(
         self, *, events, code="", task="", context="", critique=""
     ):
@@ -198,6 +213,8 @@ class ActionAgent:
 
         return HumanMessage(content=observation)
 
+    # AIメッセージを処理するメソッド
+    # LLMからの応答を解析し、実行可能なJavaScriptコードを抽出する
     def process_ai_message(self, message):
         assert isinstance(message, AIMessage)
 
@@ -255,6 +272,8 @@ class ActionAgent:
                 time.sleep(1)
         return f"Error parsing action response (before program execution): {error}"
 
+    # チャットログを要約するメソッド
+    # イベントからエージェントが必要とするアイテムや条件を抽出する
     def summarize_chatlog(self, events):
         def filter_item(message: str):
             craft_pattern = r"I cannot make \w+ because I need: (.*)"
