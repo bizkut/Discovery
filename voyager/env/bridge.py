@@ -152,11 +152,11 @@ class VoyagerEnv(gym.Env):
                     print(f"リトライ {retry}/{max_retries}")
                     time.sleep(2)  # リトライ前に少し待機
                     continue
-            print(self.mineflayer.ready_line)
             
             # リクエスト送信前に接続情報を再確認
-            print(f"Mineflayerサーバーに送信するリクエスト: {self.reset_options}")
-            print(f"接続先: {self.reset_options.get('host', 'localhost')}:{self.reset_options.get('port', 'N/A')}")
+            print(f"Mineflayer send request: {self.reset_options}")
+            #print(self.mineflayer.ready_line)
+            #print(f"接続先: {self.reset_options.get('host', 'localhost')}:{self.reset_options.get('port', 'N/A')}")
             
             try:
                 # サーバーに接続情報を送信
@@ -205,7 +205,37 @@ class VoyagerEnv(gym.Env):
             Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]: 
                 標準的なGym環境の戻り値形式
                 (観測, 報酬, 終了フラグ, 切り捨てフラグ, 情報辞書)
-                
+        
+        返答例:
+        [['observe', {
+            'voxels': ['vine', 'oak_leaves', 'oak_log'],  # 周辺のブロック情報
+            'status': {
+                'health': 20,  # プレイヤーの体力
+                'food': 20,  # 満腹度
+                'saturation': 5,  # 隠し満腹度
+                'position': {'x': -41.5, 'y': 66, 'z': -64.5},  # 座標
+                'velocity': {'x': 0, 'y': -0.0784000015258789, 'z': 0},  # 速度
+                'yaw': 3.141592653589793,  # 水平方向の向き
+                'pitch': 0,  # 垂直方向の向き
+                'onGround': True,  # 地面に接地しているか
+                'equipment': [None, None, None, None, None, None],  # 装備状態
+                'name': 'bot',  # プレイヤー名
+                'timeSinceOnGround': 0,  # 最後に地面に触れてからの時間
+                'isInWater': False,  # 水中にいるか
+                'isInLava': False,  # 溶岩中にいるか
+                'isCollidedHorizontally': False,  # 水平方向の衝突
+                'isCollidedVertically': True,  # 垂直方向の衝突
+                'biome': 'forest',  # バイオーム
+                'entities': {'wolf': 31.9888205417697},  # 周辺のエンティティと距離
+                'timeOfDay': 'sunrise',  # ゲーム内時間
+                'inventoryUsed': 0,  # インベントリ使用状況
+                'elapsedTime': 83  # 経過時間
+            },
+            'inventory': {},  # インベントリ内容
+            'nearbyChests': {},  # 周辺のチェスト
+            'blockRecords': ['vine', 'oak_leaves', 'oak_log']  # 記録されたブロック
+        }]]
+        
         Raises:
             RuntimeError: 環境が初期化されていない場合や、サーバーとの通信に失敗した場合
         """
@@ -236,7 +266,6 @@ class VoyagerEnv(gym.Env):
             
         # レスポンスデータを取得
         returned_data = res.json()
-        print(f"サーバーレスポンスデータ: {returned_data}")
         
         # 次のステップの準備のためにサーバーを一時停止
         self.pause()
