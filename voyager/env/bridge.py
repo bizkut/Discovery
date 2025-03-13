@@ -26,12 +26,32 @@ class VoyagerEnv(gym.Env):
         request_timeout=600,
         log_path="./logs",
     ):
+        """Voyager環境のコンストラクタ
+        
+        Gymnasiumの標準インターフェースに準拠したMinecraft環境を初期化します。
+        既存のMinecraftサーバーに接続するか、新しいAzureインスタンスを作成します。
+        
+        Args:
+            mc_port (Optional[int]): 既存のMinecraftサーバーのポート番号
+            mc_host (str): Minecraftサーバーのホスト名。デフォルトは"host.docker.internal"
+            azure_login (Optional[Dict]): Azureインスタンスのログイン情報
+            server_host (str): Mineflayerサーバーのホスト名。デフォルトは"http://127.0.0.1"
+            server_port (int): Mineflayerサーバーのポート番号。デフォルトは3000
+            request_timeout (int): リクエストのタイムアウト時間（秒）。デフォルトは600
+            log_path (str): ログファイルの保存先。デフォルトは"./logs"
+            
+        Raises:
+            ValueError: mc_portとazure_loginの両方が指定されていない場合
+        """
+        # mc_portとazure_loginの少なくとも一方が指定されているか確認
         if not mc_port and not azure_login:
             raise ValueError("Either mc_port or azure_login must be specified")
+        # 両方指定されている場合は警告を表示
         if mc_port and azure_login:
             warnings.warn(
                 "Both mc_port and mc_login are specified, mc_port will be ignored"
             )
+        # 各種パラメータを保存
         self.mc_port = mc_port
         self.mc_host = mc_host  # Minecraftホストを保存
         self.azure_login = azure_login
@@ -39,19 +59,35 @@ class VoyagerEnv(gym.Env):
         self.server_port = server_port
         self.request_timeout = request_timeout
         self.log_path = log_path
+        # Mineflayerプロセスを初期化
         self.mineflayer = self.get_mineflayer_process(server_port)
+        # Azure認証情報が提供されている場合はMinecraftインスタンスを作成
         if azure_login:
             self.mc_instance = self.get_mc_instance()
         else:
             self.mc_instance = None
+        # 環境の状態を初期化
         self.has_reset = False
         self.reset_options = None
         self.connected = False
         self.server_paused = False
 
     def get_mineflayer_process(self, server_port):
+        """Mineflayerプロセスを初期化するメソッド
+        
+        指定されたポートでMineflayerサーバーを起動するためのSubprocessMonitorを作成します。
+        
+        Args:
+            server_port (int): Mineflayerサーバーのポート番号
+            
+        Returns:
+            SubprocessMonitor: Mineflayerプロセスを監視するオブジェクト
+        """
+        # ログディレクトリを作成
         U.f_mkdir(self.log_path, "mineflayer")
+        # 現在のファイルのディレクトリパスを取得
         file_path = os.path.abspath(os.path.dirname(__file__))
+        # SubprocessMonitorを作成して返す
         return SubprocessMonitor(
             commands=[
                 "node",
@@ -64,8 +100,17 @@ class VoyagerEnv(gym.Env):
         )
 
     def get_mc_instance(self):
+        """Minecraftインスタンスを作成するメソッド
+        
+        Azure認証情報を使用して新しいMinecraftサーバーインスタンスを作成します。
+        
+        Returns:
+            MinecraftInstance: 作成されたMinecraftインスタンス
+        """
         print("Creating Minecraft server")
+        # ログディレクトリを作成
         U.f_mkdir(self.log_path, "minecraft")
+        # MinecraftInstanceを作成して返す
         return MinecraftInstance(
             **self.azure_login,
             mineflayer=self.mineflayer,
@@ -73,6 +118,20 @@ class VoyagerEnv(gym.Env):
         )
 
     def check_process(self):
+        """Minecraftプロセスとmineflayerサーバーの状態を確認し、必要に応じて再起動するメソッド
+        
+        このメソッドは以下の処理を行います：
+        1. Minecraftインスタンスが存在し、実行されていない場合は再起動を試みます
+        2. Mineflayerサーバーが実行されていない場合は再起動を試みます
+        3. Mineflayerサーバーに接続情報を送信し、Minecraft環境との接続を確立します
+        
+        Returns:
+            Dict: サーバーからのレスポンスデータ（JSON形式）
+            
+        Raises:
+            RuntimeError: プロセスの起動に失敗した場合や、サーバーとの通信に失敗した場合
+        """
+        # Minecraftインスタンスの状態確認と再起動
         if self.mc_instance and not self.mc_instance.is_running:
             print("Minecraft process has exited, restarting")
             self.mc_instance.run()
@@ -100,11 +159,13 @@ class VoyagerEnv(gym.Env):
             print(f"接続先: {self.reset_options.get('host', 'localhost')}:{self.reset_options.get('port', 'N/A')}")
             
             try:
+                # サーバーに接続情報を送信
                 res = requests.post(
                     f"{self.server}/start",
                     json=self.reset_options,
                     timeout=self.request_timeout,
                 )
+                # レスポンスのステータスコードを確認
                 if res.status_code != 200:
                     print(f"エラー: サーバーから {res.status_code} コードが返されました")
                     self.mineflayer.stop()
@@ -116,6 +177,7 @@ class VoyagerEnv(gym.Env):
                     continue
                 return res.json()
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                # 接続エラーまたはタイムアウトの処理
                 print(f"接続エラー: {e}")
                 self.mineflayer.stop()
                 if retry >= max_retries:
@@ -130,24 +192,67 @@ class VoyagerEnv(gym.Env):
         code: str,
         programs: str = "",
     ) -> Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
+        """Minecraftエージェントに次のアクションを実行させるメソッド
+        
+        このメソッドはGymnasiumの標準インターフェースに準拠しており、
+        Minecraftエージェントに指示を送るためのブリッジとして機能します。
+        
+        Args:
+            code (str): 実行するコード文字列
+            programs (str, optional): 追加のプログラム。デフォルトは空文字列
+            
+        Returns:
+            Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]: 
+                標準的なGym環境の戻り値形式
+                (観測, 報酬, 終了フラグ, 切り捨てフラグ, 情報辞書)
+                
+        Raises:
+            RuntimeError: 環境が初期化されていない場合や、サーバーとの通信に失敗した場合
+        """
+        # 環境が初期化されているか確認
         if not self.has_reset:
             raise RuntimeError("Environment has not been reset yet")
+            
+        # Minecraftプロセスとmineflayerサーバーの状態を確認
         self.check_process()
+        
+        # サーバーが一時停止状態の場合は再開
         self.unpause()
+        
+        # 実行するコードとプログラムをデータ辞書にまとめる
         data = {
             "code": code,
             "programs": programs,
         }
+        
+        # サーバーにPOSTリクエストを送信してコードを実行
         res = requests.post(
             f"{self.server}/step", json=data, timeout=self.request_timeout
         )
+        
+        # レスポンスのステータスコードを確認
         if res.status_code != 200:
             raise RuntimeError("Failed to step Minecraft server")
+            
+        # レスポンスデータを取得
         returned_data = res.json()
+        print(f"サーバーレスポンスデータ: {returned_data}")
+        
+        # 次のステップの準備のためにサーバーを一時停止
         self.pause()
+        
+        # JSONデータをパースして返す
         return json.loads(returned_data)
 
     def render(self):
+        """環境の状態を視覚化するメソッド
+        
+        Gymnasiumの標準インターフェースに準拠していますが、
+        現在の実装では対応していません。
+        
+        Raises:
+            NotImplementedError: このメソッドは現在実装されていません
+        """
         raise NotImplementedError("render is not implemented")
 
     def reset(
@@ -156,12 +261,35 @@ class VoyagerEnv(gym.Env):
         seed=None,
         options=None,
     ) -> Tuple[ObsType, Dict[str, Any]]:
+        """環境を初期化するメソッド
+        
+        Gymnasiumの標準インターフェースに準拠しており、Minecraft環境を
+        指定されたオプションに基づいて初期化します。
+        
+        Args:
+            seed (Optional[int]): 乱数生成のためのシード値（現在は使用されていない）
+            options (Optional[Dict]): 初期化オプション
+                - mode (str): リセットモード。"hard"または"soft"。デフォルトは"hard"
+                - inventory (Dict): 初期インベントリ設定（"hard"モード時のみ有効）
+                - equipment (List): 初期装備設定
+                - spread (bool): プレイヤーをランダムな位置に配置するかどうか
+                - wait_ticks (int): 初期化後の待機ティック数
+                - position (Optional): 初期位置の指定
+        
+        Returns:
+            Tuple[ObsType, Dict[str, Any]]: 初期観測値と情報辞書
+            
+        Raises:
+            RuntimeError: 無効なオプション組み合わせが指定された場合
+        """
         if options is None:
             options = {}
 
+        # "hard"モード以外でinventoryオプションが指定された場合はエラー
         if options.get("inventory", {}) and options.get("mode", "hard") != "hard":
             raise RuntimeError("inventory can only be set when options is hard")
 
+        # リセットオプションを設定
         self.reset_options = {
             "port": self.mc_port,
             "host": self.mc_host,  # mc_host の値を追加
@@ -173,30 +301,55 @@ class VoyagerEnv(gym.Env):
             "position": options.get("position", None),
         }
 
+        # サーバーが一時停止状態の場合は再開
         self.unpause()
+        # Mineflayerプロセスを停止して再起動の準備
         self.mineflayer.stop()
-        time.sleep(1)  # wait for mineflayer to exit
+        time.sleep(1)  # Mineflayerが完全に終了するのを待機
 
+        # プロセスを確認し、必要に応じて再起動
         returned_data = self.check_process()
         self.has_reset = True
         self.connected = True
-        # All the reset in step will be soft
+        # 以降のリセットはすべて"soft"モードに設定
         self.reset_options["reset"] = "soft"
+        # 次のステップの準備のためにサーバーを一時停止
         self.pause()
         return json.loads(returned_data)
 
     def close(self):
+        """環境を閉じるメソッド
+        
+        Gymnasiumの標準インターフェースに準拠しており、Minecraft環境との
+        接続を切断し、関連するプロセスを終了します。
+        
+        Returns:
+            bool: 接続が正常に切断されたかどうか（True: 切断済み、False: 接続中）
+        """
+        # サーバーが一時停止状態の場合は再開
         self.unpause()
+        # サーバーに接続されている場合は停止リクエストを送信
         if self.connected:
             res = requests.post(f"{self.server}/stop")
             if res.status_code == 200:
                 self.connected = False
+        # Minecraftインスタンスが存在する場合は停止
         if self.mc_instance:
             self.mc_instance.stop()
+        # Mineflayerプロセスを停止
         self.mineflayer.stop()
+        # 接続状態の反転値を返す（True: 切断済み、False: 接続中）
         return not self.connected
 
     def pause(self):
+        """サーバーを一時停止状態にするメソッド
+        
+        Mineflayerサーバーが実行中で、かつ現在一時停止状態でない場合に
+        サーバーに一時停止リクエストを送信します。
+        
+        Returns:
+            bool: 一時停止状態かどうか（True: 一時停止中、False: 実行中）
+        """
         if self.mineflayer.is_running and not self.server_paused:
             res = requests.post(f"{self.server}/pause")
             if res.status_code == 200:
@@ -204,6 +357,14 @@ class VoyagerEnv(gym.Env):
         return self.server_paused
 
     def unpause(self):
+        """サーバーの一時停止を解除するメソッド
+        
+        Mineflayerサーバーが実行中で、かつ現在一時停止状態の場合に
+        サーバーに一時停止解除リクエストを送信します。
+        
+        Returns:
+            bool: 一時停止状態かどうか（True: 一時停止中、False: 実行中）
+        """
         if self.mineflayer.is_running and self.server_paused:
             res = requests.post(f"{self.server}/pause")
             if res.status_code == 200:
