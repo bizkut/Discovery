@@ -193,7 +193,6 @@ class Voyager:
         )
         
         # 時間設定と難易度設定のコマンドを実行
-        # 時間設定と難易度設定のコマンドを実行
         events = self.env.step(
             "bot.chat(`/time set ${getNextTime()}`);\n"
             + f"bot.chat('/difficulty {difficulty}');"

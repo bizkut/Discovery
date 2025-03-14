@@ -159,7 +159,7 @@ class VoyagerEnv(gym.Env):
             #print(f"接続先: {self.reset_options.get('host', 'localhost')}:{self.reset_options.get('port', 'N/A')}")
             
             try:
-                # サーバーに接続情報を送信
+                # botの生成
                 res = requests.post(
                     f"{self.server}/start",
                     json=self.reset_options,
