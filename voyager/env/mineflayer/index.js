@@ -1,54 +1,110 @@
-const fs = require("fs");
-const express = require("express");
-const bodyParser = require("body-parser");
-const mineflayer = require("mineflayer");
+/**
+ * Minecraftボット制御サーバー
+ * 
+ * このファイルは、MinecraftボットのHTTP APIサーバーを実装します。
+ * Express.jsを使用してRESTful APIを提供し、以下の機能を実装しています：
+ * - ボットの起動と初期化 (/start)
+ * - ボットのアクション実行 (/step)
+ * - ボットの停止 (/stop)
+ * - ゲームの一時停止 (/pause)
+ */
 
-const skills = require("./lib/skillLoader");
-const { initCounter, getNextTime } = require("./lib/utils");
-const obs = require("./lib/observation/base");
-const OnChat = require("./lib/observation/onChat");
-const OnError = require("./lib/observation/onError");
-const { Voxels, BlockRecords } = require("./lib/observation/voxels");
-const Status = require("./lib/observation/status");
-const Inventory = require("./lib/observation/inventory");
-const OnSave = require("./lib/observation/onSave");
-const Chests = require("./lib/observation/chests");
-const { plugin: tool } = require("mineflayer-tool");
+// 基本的なNode.jsモジュール
+const fs = require("fs");                    // ファイルシステム操作用
+const express = require("express");          // Webサーバーフレームワーク
+const bodyParser = require("body-parser");   // リクエストボディ解析用
+const mineflayer = require("mineflayer");    // Minecraftボット制御用
 
+// カスタムモジュールのインポート
+const skills = require("./lib/skillLoader");                     // ボットのスキル管理
+const { initCounter, getNextTime } = require("./lib/utils");     // ユーティリティ関数
+const obs = require("./lib/observation/base");                   // 基本観察機能
+const OnChat = require("./lib/observation/onChat");             // チャット監視
+const OnError = require("./lib/observation/onError");           // エラー監視
+const { Voxels, BlockRecords } = require("./lib/observation/voxels");  // ブロック観察
+const Status = require("./lib/observation/status");             // 状態監視
+const Inventory = require("./lib/observation/inventory");       // インベントリ管理
+const OnSave = require("./lib/observation/onSave");            // セーブ機能
+const Chests = require("./lib/observation/chests");            // チェスト管理
+const { plugin: tool } = require("mineflayer-tool");           // ツール操作
+
+// グローバルなボットインスタンス
 let bot = null;
 
+// Expressアプリケーションの初期化
 const app = express();
 
+/**
+ * ミドルウェアの設定
+ * - JSONリクエストの最大サイズを50MBに制限
+ * - URL encodedリクエストの最大サイズも50MBに制限
+ */
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: false }));
 
+/**
+ * ボット起動エンドポイント
+ * 新しいボットインスタンスを作成し、初期設定を行います
+ * 
+ * リクエストパラメータ:
+ * - host: Minecraftサーバーのホスト名（デフォルト: localhost）
+ * - port: サーバーポート
+ * - waitTicks: ティック待機時間
+ * - reset: リセットモード（"hard"の場合、完全リセット）
+ * - position: 初期位置
+ * - spread: プレイヤー拡散の有無
+ */
 app.post("/start", (req, res) => {
+    // 既存のボットがある場合は切断
     if (bot) onDisconnect("Restarting bot");
     bot = null;
     console.log(req.body);
+
+    // 新しいボットインスタンスの作成
     bot = mineflayer.createBot({
-        host: req.body.host || "localhost", // minecraft server ip from request or default to localhost
-        port: req.body.port, // minecraft server port
-        username: "bot",
-        disableChatSigning: true,
-        checkTimeoutInterval: 60 * 60 * 1000,
+        host: req.body.host || "localhost", // Minecraftサーバーのホスト
+        port: req.body.port,               // Minecraftサーバーのポート
+        username: "bot",                   // ボットのユーザー名
+        disableChatSigning: true,          // チャット署名を無効化
+        checkTimeoutInterval: 60 * 60 * 1000, // 1時間のタイムアウト
     });
+
+    // エラーイベントの初期設定
     bot.once("error", onConnectionFailed);
 
-    // Event subscriptions
+    /**
+     * ボットの状態変数の初期化
+     * - waitTicks: アクション間の待機時間
+     * - globalTickCounter: 全体的なティックカウンター
+     * - stuckTickCounter: スタック状態の検出用カウンター
+     * - stuckPosList: スタック位置の履歴
+     * - iron_pickaxe: 鉄のツルハシの所持状態
+     */
     bot.waitTicks = req.body.waitTicks;
     bot.globalTickCounter = 0;
     bot.stuckTickCounter = 0;
     bot.stuckPosList = [];
     bot.iron_pickaxe = false;
 
+    // キック（強制切断）イベントの監視
     bot.on("kicked", onDisconnect);
 
-    // mounting will cause physicsTick to stop
+    /**
+     * マウントイベントの処理
+     * 物理的なティック処理が停止するのを防ぐため、
+     * 自動的に降下します
+     */
     bot.on("mount", () => {
         bot.dismount();
     });
 
+    /**
+     * スポーン時の初期化処理
+     * - インベントリのリセット（ハードリセット時）
+     * - 位置の設定
+     * - プラグインの読み込み
+     * - ゲームルールの設定
+     */
     bot.once("spawn", async () => {
         bot.removeListener("error", onConnectionFailed);
         let itemTicks = 1;
@@ -134,11 +190,24 @@ app.post("/start", (req, res) => {
         bot.chat("/gamerule doDaylightCycle false");
     });
 
+    /**
+     * 接続失敗時のエラーハンドリング
+     * エラーをログに記録し、クライアントにエラーレスポンスを返します
+     * @param {Error} e - 発生したエラー
+     */
     function onConnectionFailed(e) {
         console.log(e);
         bot = null;
         res.status(400).json({ error: e });
     }
+
+    /**
+     * ボット切断時の処理
+     * - ビューワーの終了
+     * - ボットの終了
+     * - 状態のクリーンアップ
+     * @param {string} message - 切断理由のメッセージ
+     */
     function onDisconnect(message) {
         if (bot.viewer) {
             bot.viewer.close();
@@ -149,9 +218,26 @@ app.post("/start", (req, res) => {
     }
 });
 
+/**
+ * ボットのアクション実行エンドポイント
+ * 指定されたコードを実行し、結果を返します
+ * 
+ * リクエストパラメータ:
+ * - code: 実行するJavaScriptコード
+ * - programs: 事前に定義された補助プログラム
+ * 
+ * レスポンス:
+ * - 成功時: ボットの観察結果
+ * - 失敗時: エラーメッセージ
+ */
 app.post("/step", async (req, res) => {
-    // import useful package
+    // エラーハンドリングの設定
     let response_sent = false;
+
+    /**
+     * 未捕捉エラーのハンドリング
+     * @param {Error} err - 発生したエラー
+     */
     function otherError(err) {
         console.log("Uncaught Error");
         bot.emit("error", handleError(err));
@@ -165,7 +251,10 @@ app.post("/step", async (req, res) => {
 
     process.on("uncaughtException", otherError);
 
+    // Minecraft関連データの初期化とカスタマイズ
     const mcData = require("minecraft-data")(bot.version);
+    
+    // アイテム名の別名マッピング（互換性のため）
     mcData.itemsByName["leather_cap"] = mcData.itemsByName["leather_helmet"];
     mcData.itemsByName["leather_tunic"] =
         mcData.itemsByName["leather_chestplate"];
@@ -174,6 +263,8 @@ app.post("/step", async (req, res) => {
     mcData.itemsByName["leather_boots"] = mcData.itemsByName["leather_boots"];
     mcData.itemsByName["lapis_lazuli_ore"] = mcData.itemsByName["lapis_ore"];
     mcData.blocksByName["lapis_lazuli_ore"] = mcData.blocksByName["lapis_ore"];
+
+    // パスファインダー関連のモジュールインポート
     const {
         Movements,
         goals: {
@@ -203,14 +294,20 @@ app.post("/step", async (req, res) => {
     } = require("mineflayer-pathfinder");
     const { Vec3 } = require("vec3");
 
-    // Set up pathfinder
+    // パスファインダーの初期設定
     const movements = new Movements(bot, mcData);
     bot.pathfinder.setMovements(movements);
 
+    // カウンターの初期化
     bot.globalTickCounter = 0;
     bot.stuckTickCounter = 0;
     bot.stuckPosList = [];
 
+    /**
+     * 物理的なティックごとの処理
+     * - グローバルカウンターの更新
+     * - スタック状態の検出と処理
+     */
     function onTick() {
         bot.globalTickCounter++;
         if (bot.pathfinder.isMoving()) {
@@ -224,25 +321,30 @@ app.post("/step", async (req, res) => {
 
     bot.on("physicTick", onTick);
 
-    // initialize fail count
-    let _craftItemFailCount = 0;
-    let _killMobFailCount = 0;
-    let _mineBlockFailCount = 0;
-    let _placeItemFailCount = 0;
-    let _smeltItemFailCount = 0;
+    // 各種失敗カウンターの初期化
+    let _craftItemFailCount = 0;    // クラフト失敗回数
+    let _killMobFailCount = 0;      // モブ討伐失敗回数
+    let _mineBlockFailCount = 0;    // ブロック採掘失敗回数
+    let _placeItemFailCount = 0;    // アイテム設置失敗回数
+    let _smeltItemFailCount = 0;    // 精錬失敗回数
 
-    // Retrieve array form post bod
+    // コードの実行準備
     const code = req.body.code;
     const programs = req.body.programs;
     bot.cumulativeObs = [];
     await bot.waitForTicks(bot.waitTicks);
+    
+    // コードの実行と結果の処理
     const r = await evaluateCode(code, programs);
     process.off("uncaughtException", otherError);
     if (r !== "success") {
         bot.emit("error", handleError(r));
     }
+    
+    // アイテムの返却処理
     await returnItems();
-    // wait for last message
+    
+    // 最終メッセージの待機と応答送信
     await bot.waitForTicks(bot.waitTicks);
     if (!response_sent) {
         response_sent = true;
@@ -250,8 +352,15 @@ app.post("/step", async (req, res) => {
     }
     bot.removeListener("physicTick", onTick);
 
+    /**
+     * コード評価関数
+     * 提供されたコードとプログラムを実行します
+     * 
+     * @param {string} code - 実行するコード
+     * @param {string} programs - 補助プログラム
+     * @returns {string} 実行結果（"success"または エラーオブジェクト）
+     */
     async function evaluateCode(code, programs) {
-        // Echo the code produced for players to see it. Don't echo when the bot code is already producing dialog or it will double echo
         try {
             await eval("(async () => {" + programs + "\n" + code + "})()");
             return "success";
@@ -260,45 +369,67 @@ app.post("/step", async (req, res) => {
         }
     }
 
+    /**
+     * スタック状態の検出と処理
+     * 一定時間同じ場所に留まっている場合、
+     * ボットの位置を調整します
+     * 
+     * @param {number} posThreshold - 位置の閾値（ブロック単位）
+     */
     function onStuck(posThreshold) {
         const currentPos = bot.entity.position;
         bot.stuckPosList.push(currentPos);
 
-        // Check if the list is full
+        // 履歴が5件たまったら判定
         if (bot.stuckPosList.length === 5) {
             const oldestPos = bot.stuckPosList[0];
             const posDifference = currentPos.distanceTo(oldestPos);
 
             if (posDifference < posThreshold) {
-                teleportBot(); // execute the function
+                teleportBot();
             }
 
-            // Remove the oldest time from the list
+            // 最古の位置を削除
             bot.stuckPosList.shift();
         }
     }
 
+    /**
+     * ボットのテレポート処理
+     * スタック状態から脱出するため、
+     * 近くの安全な場所にテレポートします
+     */
     function teleportBot() {
         const blocks = bot.findBlocks({
             matching: (block) => {
-                return block.type === 0;
+                return block.type === 0;  // 空気ブロックを探す
             },
             maxDistance: 1,
             count: 27,
         });
 
         if (blocks) {
-            // console.log(blocks.length);
             const randomIndex = Math.floor(Math.random() * blocks.length);
             const block = blocks[randomIndex];
             bot.chat(`/tp @s ${block.x} ${block.y} ${block.z}`);
         } else {
+            // 安全なブロックが見つからない場合は上方向に移動
             bot.chat("/tp @s ~ ~1.25 ~");
         }
     }
 
+    /**
+     * アイテムの返却処理
+     * セッション終了時に以下のアイテムを返却します：
+     * - クラフティングテーブル
+     * - かまど
+     * - チェスト（インベントリが32以上の場合）
+     * - 鉄のツルハシ（所持していた場合）
+     */
     function returnItems() {
         bot.chat("/gamerule doTileDrops false");
+        
+        // クラフティングテーブルの処理
         const crafting_table = bot.findBlock({
             matching: mcData.blocksByName.crafting_table.id,
             maxDistance: 128,
@@ -309,6 +440,8 @@ app.post("/step", async (req, res) => {
             );
             bot.chat("/give @s crafting_table");
         }
+
+        // かまどの処理
         const furnace = bot.findBlock({
             matching: mcData.blocksByName.furnace.id,
             maxDistance: 128,
@@ -319,13 +452,15 @@ app.post("/step", async (req, res) => {
             );
             bot.chat("/give @s furnace");
         }
+
+        // インベントリ管理（チェストの付与）
         if (bot.inventoryUsed() >= 32) {
-            // if chest is not in bot's inventory
             if (!bot.inventory.items().find((item) => item.name === "chest")) {
                 bot.chat("/give @s chest");
             }
         }
-        // if iron_pickaxe not in bot's inventory and bot.iron_pickaxe
+
+        // 鉄のツルハシの処理
         if (
             bot.iron_pickaxe &&
             !bot.inventory.items().find((item) => item.name === "iron_pickaxe")
@@ -335,6 +470,13 @@ app.post("/step", async (req, res) => {
         bot.chat("/gamerule doTileDrops true");
     }
 
+    /**
+     * エラーハンドリング関数
+     * エラーメッセージを整形し、デバッグ情報を付加します
+     * 
+     * @param {Error} err - 発生したエラー
+     * @returns {string} 整形されたエラーメッセージ
+     */
     function handleError(err) {
         let stack = err.stack;
         if (!stack) {
@@ -344,6 +486,7 @@ app.post("/step", async (req, res) => {
         const final_line = stack.split("\n")[1];
         const regex = /<anonymous>:(\d+):\d+\)/;
 
+        // エラー位置の特定
         const programs_length = programs.split("\n").length;
         let match_line = null;
         for (const line of stack.split("\n")) {
@@ -359,13 +502,14 @@ app.post("/step", async (req, res) => {
         if (!match_line) {
             return err.message;
         }
+
+        // エラーメッセージの生成
         let f_line = final_line.match(
             /\((?<file>.*):(?<line>\d+):(?<pos>\d+)\)/
         );
         if (f_line && f_line.groups && fs.existsSync(f_line.groups.file)) {
             const { file, line, pos } = f_line.groups;
             const f = fs.readFileSync(file, "utf8").split("\n");
-            // let filename = file.match(/(?<=node_modules\\)(.*)/)[1];
             let source = file + `:${line}\n${f[line - 1].trim()}\n `;
 
             const code_source =
@@ -398,6 +542,13 @@ app.post("/step", async (req, res) => {
     }
 });
 
+/**
+ * ボットの停止エンドポイント
+ * ボットを安全に終了させ、リソースを解放します
+ * 
+ * レスポンス:
+ * - message: "Bot stopped"
+ */
 app.post("/stop", (req, res) => {
     bot.end();
     res.json({
@@ -405,6 +556,14 @@ app.post("/stop", (req, res) => {
     });
 });
 
+/**
+ * ゲームの一時停止エンドポイント
+ * ゲームを一時停止し、ボットの状態を保持します
+ * 
+ * レスポンス:
+ * - 成功時: { message: "Success" }
+ * - 失敗時: { error: "Bot not spawned" }
+ */
 app.post("/pause", (req, res) => {
     if (!bot) {
         res.status(400).json({ error: "Bot not spawned" });
@@ -416,10 +575,14 @@ app.post("/pause", (req, res) => {
     });
 });
 
-// Server listening to PORT 3000
-
+// サーバーの設定と起動
 const DEFAULT_PORT = 3000;
 const PORT = process.argv[2] || DEFAULT_PORT;
+
+/**
+ * サーバーの起動
+ * 指定されたポート（デフォルト: 3000）でサーバーを起動します
+ */
 app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);
 });
