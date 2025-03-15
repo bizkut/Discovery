@@ -7,15 +7,14 @@ javascript
 setuptools
 openai
 chardet
-cchardet
+# cchardetは削除（chardetと競合するため）
 chromadb==0.3.29
 tiktoken
 requests
-setuptools
 gymnasium
 psutil
 minecraft_launcher_lib
 python-dotenv
 
-# その他
-langflow
+# LangFlow
+deep-translator
