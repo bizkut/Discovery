@@ -144,39 +144,43 @@ app.post("/start", (req, res) => {
             );
         }
 
-        // if iron_pickaxe is in bot's inventory
-        if (
-            bot.inventory.items().find((item) => item.name === "iron_pickaxe")
-        ) {
+        // 鉄のツルハシの所持確認
+        if (bot.inventory.items().find((item) => item.name === "iron_pickaxe")) {
             bot.iron_pickaxe = true;
         }
 
-        const { pathfinder } = require("mineflayer-pathfinder");
-        const tool = require("mineflayer-tool").plugin;
-        const collectBlock = require("mineflayer-collectblock").plugin;
-        const pvp = require("mineflayer-pvp").plugin;
-        const minecraftHawkEye = require("minecrafthawkeye").default;
+        // 必要なプラグインの読み込み
+        const { pathfinder } = require("mineflayer-pathfinder");    // 経路探索
+        const tool = require("mineflayer-tool").plugin;             // ツール操作
+        const collectBlock = require("mineflayer-collectblock").plugin;  // ブロック収集
+        const pvp = require("mineflayer-pvp").plugin;               // PvP機能
+        const minecraftHawkEye = require("minecrafthawkeye").default;   // 視覚支援
         bot.loadPlugin(pathfinder);
         bot.loadPlugin(tool);
         bot.loadPlugin(collectBlock);
         bot.loadPlugin(pvp);
         bot.loadPlugin(minecraftHawkEye);
 
-        // bot.collectBlock.movements.digCost = 0;
-        // bot.collectBlock.movements.placeCost = 0;
-
+        // 観察機能の注入
         obs.inject(bot, [
-            OnChat,
-            OnError,
-            Voxels,
-            Status,
-            Inventory,
-            OnSave,
-            Chests,
-            BlockRecords,
+            OnChat,      // チャット監視
+            OnError,     // エラー監視
+            Voxels,      // ブロック観察
+            Status,      // 状態監視
+            Inventory,   // インベントリ管理
+            OnSave,      // セーブ機能
+            Chests,      // チェスト管理
+            BlockRecords // ブロック記録
         ]);
-        skills.inject(bot);
+        skills.inject(bot);  // スキルの注入
 
+        /**
+         * プレイヤーの拡散配置
+         * /spreadplayers コマンドを使用して、プレイヤーをランダムな位置に配置
+         * - 現在位置を中心に、半径300ブロック以内
+         * - 高度80ブロック以下の地点に配置
+         * - チーム分けは無効
+         */
         if (req.body.spread) {
             bot.chat(`/spreadplayers ~ ~ 0 300 under 80 false @s`);
             await bot.waitForTicks(bot.waitTicks);
@@ -186,8 +190,14 @@ app.post("/start", (req, res) => {
         res.json(bot.observe());
 
         initCounter(bot);
-        bot.chat("/gamerule keepInventory true");
-        bot.chat("/gamerule doDaylightCycle false");
+
+        /**
+         * ゲームルールの設定
+         * - keepInventory: プレイヤーが死亡時にインベントリとXPを保持
+         * - doDaylightCycle: 昼夜サイクルの進行を停止
+         */
+        bot.chat("/gamerule keepInventory true");    // 死亡時のアイテム保持を有効化
+        bot.chat("/gamerule doDaylightCycle false"); // 昼夜サイクルを停止
     });
 
     /**
@@ -256,10 +266,8 @@ app.post("/step", async (req, res) => {
     
     // アイテム名の別名マッピング（互換性のため）
     mcData.itemsByName["leather_cap"] = mcData.itemsByName["leather_helmet"];
-    mcData.itemsByName["leather_tunic"] =
-        mcData.itemsByName["leather_chestplate"];
-    mcData.itemsByName["leather_pants"] =
-        mcData.itemsByName["leather_leggings"];
+    mcData.itemsByName["leather_tunic"] = mcData.itemsByName["leather_chestplate"];
+    mcData.itemsByName["leather_pants"] = mcData.itemsByName["leather_leggings"];
     mcData.itemsByName["leather_boots"] = mcData.itemsByName["leather_boots"];
     mcData.itemsByName["lapis_lazuli_ore"] = mcData.itemsByName["lapis_ore"];
     mcData.blocksByName["lapis_lazuli_ore"] = mcData.blocksByName["lapis_ore"];
@@ -427,6 +435,12 @@ app.post("/step", async (req, res) => {
      * - 鉄のツルハシ（所持していた場合）
      */
     function returnItems() {
+        /**
+         * Minecraft: /gamerule doTileDrops false
+         * - ブロックを破壊した時にアイテムがドロップしないようにするゲームルール
+         * - 主にブロックの整理や環境のクリーンアップに使用
+         * Mineflayer: bot.chat()でMinecraftコマンドを実行
+         */
         bot.chat("/gamerule doTileDrops false");
         
         // クラフティングテーブルの処理
@@ -435,9 +449,22 @@ app.post("/step", async (req, res) => {
             maxDistance: 128,
         });
         if (crafting_table) {
+            /**
+             * Minecraft: /setblock <x> <y> <z> air destroy
+             * - 指定座標のブロックを空気ブロックに置き換える
+             * - destroy: ブロックを破壊エフェクトと共に消去
+             * Mineflayer: bot.chat()で座標を指定してブロックを削除
+             */
             bot.chat(
                 `/setblock ${crafting_table.position.x} ${crafting_table.position.y} ${crafting_table.position.z} air destroy`
             );
+
+            /**
+             * Minecraft: /give @s crafting_table
+             * - @s: コマンドを実行したプレイヤー（この場合はボット）自身
+             * - アイテムをインベントリに直接追加
+             * Mineflayer: bot.chat()でボットのインベントリにアイテムを追加
+             */
             bot.chat("/give @s crafting_table");
         }
 
@@ -447,15 +474,32 @@ app.post("/step", async (req, res) => {
             maxDistance: 128,
         });
         if (furnace) {
+            /**
+             * Minecraft: /setblock <x> <y> <z> air destroy
+             * - かまどを空気ブロックに置き換えて消去
+             * Mineflayer: bot.chat()で座標を指定してかまどを削除
+             */
             bot.chat(
                 `/setblock ${furnace.position.x} ${furnace.position.y} ${furnace.position.z} air destroy`
             );
+
+            /**
+             * Minecraft: /give @s furnace
+             * - かまどをボットのインベントリに追加
+             * Mineflayer: bot.chat()でボットのインベントリにかまどを追加
+             */
             bot.chat("/give @s furnace");
         }
 
         // インベントリ管理（チェストの付与）
         if (bot.inventoryUsed() >= 32) {
             if (!bot.inventory.items().find((item) => item.name === "chest")) {
+                /**
+                 * Minecraft: /give @s chest
+                 * - インベントリが32スロット以上使用されている場合
+                 * - チェストをボットのインベントリに追加
+                 * Mineflayer: bot.chat()でボットのインベントリにチェストを追加
+                 */
                 bot.chat("/give @s chest");
             }
         }
@@ -465,8 +509,21 @@ app.post("/step", async (req, res) => {
             bot.iron_pickaxe &&
             !bot.inventory.items().find((item) => item.name === "iron_pickaxe")
         ) {
+            /**
+             * Minecraft: /give @s iron_pickaxe
+             * - 鉄のツルハシをボットのインベントリに追加
+             * - bot.iron_pickaxeがtrueで、インベントリに鉄のツルハシがない場合に実行
+             * Mineflayer: bot.chat()でボットのインベントリに鉄のツルハシを追加
+             */
             bot.chat("/give @s iron_pickaxe");
         }
+
+        /**
+         * Minecraft: /gamerule doTileDrops true
+         * - ブロックを破壊した時にアイテムが通常通りドロップするように戻す
+         * - ゲームの通常の動作に戻すための設定
+         * Mineflayer: bot.chat()でゲームルールを元に戻す
+         */
         bot.chat("/gamerule doTileDrops true");
     }
 
