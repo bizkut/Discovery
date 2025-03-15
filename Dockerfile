@@ -21,10 +21,11 @@ RUN node --version && npm --version
 WORKDIR /app
 COPY requirements.txt setup.py README.md ./
 
-# cchardetの代わりにchardetを使用するように修正
+# cchardetの代わりにchardetを使用するように修正し、Langflowをインストール
 RUN sed -i 's/cchardet/chardet/g' requirements.txt && \
     pip install --upgrade pip && \
-    pip install -e .
+    pip install -e . && \
+    pip install langflow
 
 # プロジェクトのソースコードをコピー
 WORKDIR /app
@@ -47,6 +48,9 @@ WORKDIR /app
 # エントリポイントスクリプトの設定
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+
+# Langflowのポートを公開
+EXPOSE 7860
 
 # デフォルトコマンド
 CMD ["/docker-entrypoint.sh"]
