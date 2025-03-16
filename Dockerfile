@@ -24,8 +24,11 @@ COPY requirements.txt setup.py README.md ./
 # cchardetの代わりにchardetを使用するように修正し、Langflowをインストール
 RUN sed -i 's/cchardet/chardet/g' requirements.txt && \
     pip install --upgrade pip && \
-    pip install -e . && \
-    pip install langflow
+    pip install -e .
+
+# Langflowのインストール
+RUN cd langflow && \
+    pip install -e .
 
 # プロジェクトのソースコードをコピー
 WORKDIR /app
