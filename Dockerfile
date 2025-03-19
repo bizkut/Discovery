@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y \
     git \
     python3-dev \
     python3-pip \
-    python3.11-dev \ 
+    python3.11-dev \
+    iputils-ping \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean \
@@ -21,7 +22,6 @@ RUN node --version && npm --version
 WORKDIR /app
 COPY requirements.txt setup.py README.md ./
 
-# cchardetの代わりにchardetを使用するように修正し、Langflowをインストール
 RUN sed -i 's/cchardet/chardet/g' requirements.txt && \
     pip install --upgrade pip && \
     pip install -e .
