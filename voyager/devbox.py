@@ -6,6 +6,7 @@ from typing import Dict
 
 import voyager.utils as U
 from .env import VoyagerEnv
+from .langflow import Langflow
 
 from .agents import ActionAgent
 from .agents import CriticAgent
@@ -46,6 +47,44 @@ class Voyager_devbox:
         self.recorder = U.EventRecorder(ckpt_dir=ckpt_dir, resume=resume)
         self.resume = resume
         self.last_events = None
+        self.tweaks = {
+            "ChatOutput-LfK1l": {},
+            "MinecraftDataFormatter-IHaIU": {},
+            "LanguageTranslator-mzNKF": {},
+            "ChatInput-DOdcW": {},
+            "ChatOutput-Q7MzC": {},
+            "CombineText-rKwk7": {},
+            "TextInput-2JuA8": {},
+            "TextInput-nk9Nz": {},
+            "CombineText-0U3rh": {},
+            "LanguageTranslator-5O13U": {},
+            "Prompt-OvwRT": {},
+            "CustomComponent-dequj": {},
+            "Prompt-rVdLu": {},
+            "Prompt-sWCJ6": {},
+            "TextInput-i6PXB": {},
+            "CombineText-QYYKl": {},
+            "LanguageTranslator-tMJHM": {},
+            "ChatOutput-sWSbt": {},
+            "Agent-NWZia": {},
+            "Agent-w6dVn": {},
+            "AstraDB-On90D": {},
+            "Prompt-kr33k": {},
+            "TextInput-N8Zye": {},
+            "MergeDataComponent-LzQjK": {},
+            "Directory-sY9z8": {},
+            "ParseDataFrame-cE0qI": {},
+            "AlterMetadata-oTNIq": {},
+            "CustomComponent-nd9EO": {},
+            "Agent-mwbxB": {},
+            "TextInput-L0Cgw": {},
+            "CombineText-fWCzB": {},
+            "LanguageTranslator-VvUP9": {},
+            "ChatOutput-yR3Yo": {},
+            "CustomComponent-qSzkx": {},
+            "CombineText-ovBJG": {}
+        }
+        self.langflow = Langflow()
 
     def learn(self):
         # mineflyer サーバーの初期化
@@ -65,7 +104,13 @@ class Voyager_devbox:
                     "wait_ticks": self.env_wait_ticks,  # 環境が安定するまで待機するティック数
                 }
             )
-            print(f"mineflayer_data:\n{mineflayer_data}")
             self.resume = True  # 次回からはresumeモードとして扱う
         self.last_events = self.env.step("")  # 空のコマンドを実行してサーバー環境の現在の状態を取得
-        print(f"self.last_events:\n{self.last_events}")
+        langflow_response = self.langflow.run_flow(
+            message=self.last_events,
+            endpoint="b9b5f30d-835a-49ca-b76b-6d3b068af83a",
+            tweaks=self.tweaks
+        )
+        action_agent_code = langflow_response["ChatOutput-FUWye"] 
+        print(f"action_agent_code:\n{action_agent_code}")
+        

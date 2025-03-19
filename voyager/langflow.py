@@ -19,43 +19,6 @@ class Langflow:
         self.base_api_url = base_api_url
         self.flow_id = flow_id
         self.endpoint = endpoint
-        self.tweaks = {
-            "ChatOutput-LfK1l": {},
-            "MinecraftDataFormatter-IHaIU": {},
-            "LanguageTranslator-mzNKF": {},
-            "ChatInput-DOdcW": {},
-            "ChatOutput-Q7MzC": {},
-            "CombineText-rKwk7": {},
-            "TextInput-2JuA8": {},
-            "TextInput-nk9Nz": {},
-            "CombineText-0U3rh": {},
-            "LanguageTranslator-5O13U": {},
-            "Prompt-OvwRT": {},
-            "CustomComponent-dequj": {},
-            "Prompt-rVdLu": {},
-            "Prompt-sWCJ6": {},
-            "TextInput-i6PXB": {},
-            "CombineText-QYYKl": {},
-            "LanguageTranslator-tMJHM": {},
-            "ChatOutput-sWSbt": {},
-            "Agent-NWZia": {},
-            "Agent-w6dVn": {},
-            "AstraDB-On90D": {},
-            "Prompt-kr33k": {},
-            "TextInput-N8Zye": {},
-            "MergeDataComponent-LzQjK": {},
-            "Directory-sY9z8": {},
-            "ParseDataFrame-cE0qI": {},
-            "AlterMetadata-oTNIq": {},
-            "CustomComponent-nd9EO": {},
-            "Agent-mwbxB": {},
-            "TextInput-L0Cgw": {},
-            "CombineText-fWCzB": {},
-            "LanguageTranslator-VvUP9": {},
-            "ChatOutput-yR3Yo": {},
-            "CustomComponent-qSzkx": {},
-            "CombineText-ovBJG": {}
-        }
         self.api_key = api_key
 
 
@@ -80,7 +43,7 @@ class Langflow:
         api_url = f"{self.base_api_url}/api/v1/run/{endpoint}"
 
         payload = {
-            "input_value": message,
+            "input_value": str(message),
             "output_type": output_type,
             "input_type": input_type,
         }
@@ -91,4 +54,17 @@ class Langflow:
             headers = {"x-api-key": api_key}
         response = requests.post(api_url, json=payload, headers=headers)
         response.encoding = 'utf-8'  # エンコーディングを明示的に設定
-        return response.json()
+        data = response.json()
+        # 結果を格納する辞書を初期化
+        messages_by_component = {}
+
+        # データ構造を探索してメッセージを抽出
+        for output in data.get('outputs', []):
+            for result in output.get('outputs', []):
+                for message in result.get('messages', []):
+                    component_id = message.get('component_id')
+                    message_text = message.get('message')
+                    
+                    if component_id and message_text:
+                        messages_by_component[component_id] = message_text
+        return messages_by_component
