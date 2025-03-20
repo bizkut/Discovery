@@ -27,7 +27,8 @@ RUN sed -i 's/cchardet/chardet/g' requirements.txt && \
     pip install -e .
 
 # Langflowのインストール
-RUN cd langflow && \
+RUN git clone https://github.com/langflow-ai/langflow.git && \
+    cd langflow && \
     pip install -e .
 
 # プロジェクトのソースコードをコピー
