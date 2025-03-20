@@ -1,17 +1,8 @@
-import copy
-import json
-import os
-import time
+from langflow_chat import Langflow,ChatUI
 from typing import Dict
-
+import json
 import voyager.utils as U
 from .env import VoyagerEnv
-from .langflow import Langflow
-
-from .agents import ActionAgent
-from .agents import CriticAgent
-from .agents import CurriculumAgent
-from .agents import SkillManager
 
 class Voyager_devbox:
     def __init__(
@@ -85,6 +76,15 @@ class Voyager_devbox:
             "CombineText-ovBJG": {}
         }
         self.langflow = Langflow()
+        self.chat_ui = ChatUI(
+            langflow_instance=self.langflow,
+            port=7850,
+            host="127.0.0.1",
+            title="Langflow Chat UI",
+            auto_open=True
+        )
+        # バックグラウンドでチャットUIを起動
+        self.chat_ui.start_background()
 
     def learn(self):
         # mineflyer サーバーの初期化
@@ -98,7 +98,7 @@ class Voyager_devbox:
             )
         else:
             # インベントリをクリア
-            mineflayer_data=self.env.reset(
+            self.env.reset(
                 options={
                     "mode": "hard",  # ハードリセット：すべての状態を初期化
                     "wait_ticks": self.env_wait_ticks,  # 環境が安定するまで待機するティック数
@@ -106,11 +106,16 @@ class Voyager_devbox:
             )
             self.resume = True  # 次回からはresumeモードとして扱う
         self.last_events = self.env.step("")  # 空のコマンドを実行してサーバー環境の現在の状態を取得
-        langflow_response = self.langflow.run_flow(
+        print(f"last_events:\n{self.last_events}")
+        langflow_dict,_ = self.langflow.run_flow(
             message=self.last_events,
             endpoint="b9b5f30d-835a-49ca-b76b-6d3b068af83a",
             tweaks=self.tweaks
         )
-        action_agent_code = langflow_response["ChatOutput-FUWye"] 
-        print(f"action_agent_code:\n{action_agent_code}")
+        action_agent_code = langflow_dict["Action Code"] 
+        skill_manager_code = langflow_dict["Skill Manager Code"]
+        events = json.loads(self.env.step(action_agent_code,programs=skill_manager_code))
+        print(f"events:\n{events}")
+        nearbychests = events[-1][1]["nearbyChests"]
+        print(f"nearbychests:\n{nearbychests}")
         
