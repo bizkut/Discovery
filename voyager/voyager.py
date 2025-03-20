@@ -197,6 +197,7 @@ class Voyager:
             "bot.chat(`/time set ${getNextTime()}`);\n"
             + f"bot.chat('/difficulty {difficulty}');"
         )
+        events = json.loads(events) 
         
         # コンテキストに関連するスキルを取得
         skills = self.skill_manager.retrieve_skills(query=self.context)
@@ -253,12 +254,13 @@ class Voyager:
             
             # プログラムコードと実行コードを結合
             code = parsed_result["program_code"] + "\n" + parsed_result["exec_code"]
-            
+            print(f"\033[32mcode:\n{code}\033[0m")
             # 環境内でコードを実行
             events = self.env.step(
                 code,
                 programs=self.skill_manager.programs,
             )
+            events = json.loads(events)
             
             # イベントを記録
             self.recorder.record(events, self.task)
@@ -292,7 +294,7 @@ class Voyager:
                     f"await givePlacedItemBack(bot, {U.json_dumps(blocks)}, {U.json_dumps(positions)})",
                     programs=self.skill_manager.programs,
                 )
-                
+                new_events = json.loads(new_events)
                 # 最新のインベントリと地形情報で更新
                 events[-1][1]["inventory"] = new_events[-1][1]["inventory"]
                 events[-1][1]["voxels"] = new_events[-1][1]["voxels"]
@@ -363,11 +365,13 @@ class Voyager:
         タスクが成功するか最大試行回数に達するまで実行を続ける
         """
         # エージェントをリセットして新しいタスクを開始
+        print(f"task:{task}\ncontext:{context}\nreset_env:{reset_env}")
         self.reset(task=task, context=context, reset_env=reset_env)
         
         # タスクが完了するまでステップを繰り返す
         while True:
             messages, reward, done, info = self.step()
+            print(f"messages:\n{messages}\nreward:\n{reward}\ndone:\n{done}\ninfo:\n{info}")
             if done:
                 break
         return messages, reward, done, info
@@ -395,6 +399,7 @@ class Voyager:
             )
             self.resume = True  # 次回からはresumeモードとして扱う
         self.last_events = self.env.step("")  # 空のコマンドを実行してサーバー環境の現在の状態を取得
+        self.last_events = json.loads(self.last_events)
 
         # 学習ループの開始
         while True:
@@ -420,6 +425,7 @@ class Voyager:
                     reset_env=reset_env,  # 環境をリセットするかどうか
                 )
             except Exception as e:
+                print(f"\033[31mエラーが発生しました: {e}\033[0m")
                 time.sleep(3)  # mineflayerが終了するのを待つ
                 info = {
                     "task": task,
@@ -436,7 +442,7 @@ class Voyager:
                     }
                 )
                 # 赤色背景でエラーを表示
-                print("Your last round rollout terminated due to error:")
+                print("前回のロールアウトがエラーにより終了しました:")
                 print(f"\033[41m{e}\033[0m")
 
             # タスクが成功した場合、新しいスキルとして追加
@@ -484,6 +490,7 @@ class Voyager:
         self.curriculum_agent.completed_tasks = []
         self.curriculum_agent.failed_tasks = []
         self.last_events = self.env.step("")
+        self.last_events = json.loads(self.last_events)
         while self.curriculum_agent.progress < len(sub_goals):
             next_task = sub_goals[self.curriculum_agent.progress]
             context = self.curriculum_agent.get_task_context(next_task)

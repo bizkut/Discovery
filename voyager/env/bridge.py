@@ -271,7 +271,7 @@ class VoyagerEnv(gym.Env):
         self.pause()
         
         # JSONデータをパースして返す
-        return json.loads(returned_data)
+        return returned_data
 
     def render(self):
         """環境の状態を視覚化するメソッド
