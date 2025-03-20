@@ -64,8 +64,6 @@ class Langflow:
             response = requests.post(api_url, json=payload, headers=headers)
             response.encoding = 'utf-8'  # エンコーディングを明示的に設定
             data = response.json()
-            import json
-            print(f"data:\n{json.dumps(data,indent=4,ensure_ascii=False)}")
             
             # 問い合わせ中のプレースホルダーを削除
             if update_history:
