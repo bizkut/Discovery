@@ -34,6 +34,12 @@ RUN cd langflow && \
 WORKDIR /app
 COPY . .
 
+# langflow_chatの依存関係をインストール
+WORKDIR /app
+RUN if [ -f "langflow_chat/requirements.txt" ]; then \
+    pip install -r langflow_chat/requirements.txt; \
+    fi
+
 # 親ディレクトリに移動してmineflayerの依存関係をインストール
 WORKDIR /app/voyager/env/mineflayer
 RUN npm install
@@ -54,6 +60,8 @@ RUN chmod +x /docker-entrypoint.sh
 
 # Langflowのポートを公開
 EXPOSE 7860
+# ChatUIのポートも公開
+EXPOSE 7850
 
 # デフォルトコマンド
 CMD ["/docker-entrypoint.sh"]
