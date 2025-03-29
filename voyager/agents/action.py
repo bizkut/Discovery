@@ -36,11 +36,13 @@ class ActionAgent:
             self.chest_memory = U.load_json(f"{ckpt_dir}/action/chest_memory.json")
         else:
             self.chest_memory = {}
+        '''
         self.llm = ChatOpenAI(
             model_name=model_name,
             temperature=temperature,
             request_timeout=request_timout,
         )
+        '''
 
     # チェストメモリを更新するメソッド
     # 環境内のチェストの位置と内容を記録・更新する
