@@ -18,36 +18,28 @@ RUN apt-get update && apt-get install -y \
 # バージョン確認
 RUN node --version && npm --version
 
+# uvのインストールとlangflowのインストール
+RUN pip install uv && \
+    uv pip install langflow --system
+
 # Pythonの依存関係をインストール
 WORKDIR /app
 COPY requirements.txt setup.py README.md ./
 
-RUN sed -i 's/cchardet/chardet/g' requirements.txt && \
-    pip install --upgrade pip && \
+RUN pip install --upgrade pip && \
     pip install -e .
-
-# Langflowのインストール
-WORKDIR /app
-RUN mkdir -p langflow && \
-    git clone https://github.com/langflow-ai/langflow.git /tmp/langflow && \
-    cp -r /tmp/langflow/* /app/langflow/ && \
-    cd /app/langflow && \
-    pip install -e . --no-deps
-ENV LANGFLOW_DIR=/app/langflow
 
 # プロジェクトのソースコードをコピー
 WORKDIR /app
 COPY . .
 
 # langflow_chatの依存関係をインストール
-WORKDIR /app
-RUN if [ -f "langflow_chat/requirements.txt" ]; then \
-    pip install -r langflow_chat/requirements.txt; \
-    fi
+WORKDIR /app/langflow_chat
+RUN pip install -r requirements.txt
 
 # 親ディレクトリに移動してmineflayerの依存関係をインストール
 WORKDIR /app/voyager/env/mineflayer
-RUN npm install
+RUN npm install || (echo "npm installに失敗しました。パスやファイルの存在を確認してください。" && exit 1)
 
 # mineflayer-collectblockの依存関係をインストールしてコンパイル
 WORKDIR /app/voyager/env/mineflayer/mineflayer-collectblock

@@ -15,8 +15,7 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	"forwardPorts": [7860, 7850, 3000],
 
-	// Uncomment the next line to run commands after the container is created.
-	"postCreateCommand": "cp -r /app/langflow/* /workspaces/Voyager/langflow/ && export LANGFLOW_DIR=/workspaces/Voyager/langflow"
+	// Uncomment the next line to run commands after the container is created.\
 
 	// Configure tool-specific properties.
 	// "customizations": {},
