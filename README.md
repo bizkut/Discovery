@@ -1,5 +1,11 @@
 # Discovery: Customizable Minecraft Agent Model
 
+<div align="center">
+
+[English](README.md) | [日本語](README-jp.md)
+
+</div>
+
 ## About Discovery
 
 Discovery is an advanced Minecraft agent model based on [MineDojo Voyager](https://github.com/MineDojo/Voyager), enhanced with [LangFlow](https://github.com/logspace-ai/langflow) integration to enable greater customization and flexibility. While Voyager pioneered LLM-powered embodied agents in Minecraft, Discovery takes this concept further by allowing researchers and developers to easily modify agent behaviors, adapt different LLM models, and create custom skill libraries through an intuitive flow-based interface.
@@ -76,32 +82,86 @@ Discovery runs entirely in Docker, making setup simple and consistent across pla
    - Create a new world in Creative mode with Peaceful difficulty
    - Press Esc, select "Open to LAN"
    - Enable cheats and start the LAN world
+   - **Important**: Note down the port number displayed (e.g., "Local game hosted on port 55555")
 
 6. **Access the LangFlow interface**
    
-   Open your browser and navigate to:
+   Start LangFlow by running:
+   ```bash
+   docker exec -it discovery python -m langflow run
+   ```
+
+   Then open your browser and navigate to:
    ```
    http://localhost:7860
    ```
    
+   To load a workflow:
+   1. Click "New Flow" and select "blank flow"
+   2. Click the "🔽" (download) button at the top of the interface
+   3. Navigate to "Import" and select a JSON file from the `langflow_json` folder
+   4. The workflow will be loaded and ready for customization
+
    This opens the LangFlow interface where you can customize and run your Discovery agent.
 
 7. **Run Discovery**
    ```bash
-   docker exec -it discovery python3 run_voyager.py
+   docker exec -it discovery python3 run_devbox.py
    ```
 
    The agent will connect to your Minecraft world and begin operating according to your configured workflow.
 
 ## Using LangFlow to Customize Your Agent
 
-The LangFlow interface allows you to visually customize your agent:
+The LangFlow interface provides a visual environment to customize your agent's behavior:
 
-1. **Import a workflow** from the `langflow_json` directory
-2. **Modify components** by dragging and connecting nodes
-3. **Adjust parameters** such as exploration radius, skill priorities, or LLM settings
-4. **Save your custom workflow** for future use
-5. **Deploy** your agent directly from the interface
+1. **Load a Base Workflow**
+   - Open the LangFlow interface at `http://localhost:7860`
+   - Click "New Flow" and select "blank flow"
+   - Click the "🔽" (download) button at the top
+   - Navigate to "Import" and select a JSON file from the `langflow_json` directory
+   - The base workflow will be loaded with all necessary components
+
+2. **Customize Components**
+   - Drag and connect nodes to modify the agent's behavior
+   - Double-click any node to adjust its parameters
+   - Customization options include:
+     - Exploration radius and strategies
+     - Skill priorities and execution rules
+     - LLM model selection and parameters
+     - Custom prompt templates
+
+3. **Deploy Your Agent**
+   - Once satisfied with your changes, click "Export"
+   - Save the modified JSON file, overwriting the previous version
+   - The updated workflow will be automatically loaded on the next Discovery run
+
+## Running Discovery
+
+After customizing your workflow in LangFlow, you can run Discovery:
+
+1. **Execute run_devbox.py**
+   ```bash
+   docker exec -it discovery python3 run_devbox.py
+   ```
+
+   You will see output similar to:
+   ```
+   Minecraft connection information:
+   - Port: 59143  # ← Change this number to match your LAN port
+   - Minecraft host: host.docker.internal
+   - Mineflayer host: localhost (in container)
+   ```
+
+2. **Update Port Number**
+   - Stop the program (Ctrl+C)
+   - Edit `run_devbox.py` and change the `minecraft_port` value to match your LAN port
+   - Run the program again
+
+The agent will automatically:
+1. Load the latest workflow configuration from your modified JSON
+2. Connect to your Minecraft world using the specified port
+3. Begin operating according to your customized behavior settings
 
 ## Important Notes
 
@@ -112,6 +172,7 @@ The LangFlow interface allows you to visually customize your agent:
   - The MINECRAFT_PORT in your .env file matches the LAN port Minecraft is using
   - Host settings in docker-compose.yml
 - Ensure mod versions match exactly as specified
+- Any changes made in LangFlow will be automatically applied on the next Discovery run
 
 ## License
 
