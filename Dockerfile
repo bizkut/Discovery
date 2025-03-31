@@ -27,6 +27,7 @@ WORKDIR /app
 COPY requirements.txt setup.py README.md ./
 
 RUN pip install --upgrade pip && \
+    pip install -r requirements.txt && \
     pip install -e .
 
 # プロジェクトのソースコードをコピー
@@ -35,7 +36,7 @@ COPY . .
 
 # langflow_chatの依存関係をインストール
 WORKDIR /app/langflow_chat
-RUN pip install -r requirements.txt
+RUN uv pip install --system -r requirements.txt
 
 # 親ディレクトリに移動してmineflayerの依存関係をインストール
 WORKDIR /app/voyager/env/mineflayer

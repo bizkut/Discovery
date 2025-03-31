@@ -7,8 +7,7 @@ javascript
 setuptools
 openai
 chardet
-# cchardetは削除（chardetと競合するため）
-chromadb==0.3.29
+chromadb
 tiktoken
 requests
 gymnasium
@@ -18,3 +17,4 @@ python-dotenv
 
 # LangFlow
 deep-translator
+pydantic>=2.0.0
