@@ -1,6 +1,6 @@
 import argparse
 import json
-from argparse import RawTextHelpFormatter
+from langflow.load import run_flow_from_json
 import requests
 from typing import Optional, List, Dict, Any, Tuple
 import warnings
@@ -12,26 +12,24 @@ except ImportError:
     warnings.warn("Langflow provides a function to help you upload files to the flow. Please install langflow to use it.")
     upload_file = None
 
-class Langflow:
-    def __init__(self,
-                 langflow_base_api_url: str = "http://127.0.0.1:7860"):
-        self.langflow_base_api_url = langflow_base_api_url
+class LangflowChat:
+    def __init__(self):
         self.chat_history: List[Dict[str, Any]] = []
 
     def run_flow(
             self,
             message: str,
-            endpoint: str,
-            output_type: str = "chat",
-            input_type: str = "chat",
+            json_path: str = None,
+            fallback_to_env_vars_at_json_mode: bool = True,
+            env_file_at_json_mode: str = ".env",
             tweaks: Optional[dict] = None,
-            api_key: Optional[str] = None,
             update_history: bool = True) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
         
         """
         Run a flow with a given message and optional tweaks.
 
         :param message: The message to send to the flow
+        :param json_mode: Whether to use JSON mode, default is False
         :param endpoint: The ID or the endpoint name of the flow
         :param output_type: Type of output, default is "chat"
         :param input_type: Type of input, default is "chat"
@@ -40,65 +38,109 @@ class Langflow:
         :param update_history: Whether to update chat history, default is True
         :return: The JSON response from the flow as (dict_data, list_data)
         """
-        api_url = f"{self.langflow_base_api_url}/api/v1/run/{endpoint}"
-
-        payload = {
-            "input_value": str(message),
-            "output_type": output_type,
-            "input_type": input_type,
-        }
-        headers = None
-        if tweaks:
-            payload["tweaks"] = tweaks
-        if api_key:
-            headers = {"x-api-key": api_key}
-        
         # ユーザーメッセージをヒストリーに追加
         if update_history:
             self._add_user_message_to_history(message)
-            
-            # 問い合わせ中のプレースホルダーを追加
             self._add_pending_message_to_history()
         
         try:
-            response = requests.post(api_url, json=payload, headers=headers)
-            response.encoding = 'utf-8'  # エンコーディングを明示的に設定
-            data = response.json()
-            
+            data = run_flow_from_json(
+                flow=json_path,
+                input_value=message,
+                tweaks=tweaks,
+                fallback_to_env_vars=fallback_to_env_vars_at_json_mode,
+                env_file=env_file_at_json_mode
+            )
+                
             # 問い合わせ中のプレースホルダーを削除
             if update_history:
                 self._remove_pending_messages_from_history()
-                
-            # 結果を格納する辞書を初期化
-            dict_data = {}
-            list_data = []
-    
-            # データ構造を探索してメッセージを抽出
-            for output in data.get('outputs', []):
-                for in_output in output.get('outputs', []):
-                    output_data = in_output.get('results', {}).get('message', {}).get('data', {})
-                    if output_data:
-                        list_data.append(output_data)
-                        name = output_data.get('sender_name')
-                        icon = output_data.get('properties', {}).get('icon')
-                        component_id = output_data.get('properties', {}).get('source', {}).get('id')
-                        text = output_data.get('text')
-    
-                        if name and text:
-                            dict_data[name] = text
+            
+            list_data = [] 
+
+            for item in data:
+                if hasattr(item, 'outputs'):
+                    for output in item.outputs:
+                        if hasattr(output, 'results') and 'message' in output.results:
+                            message_obj = output.results['message']
                             
-                            # ボットの応答をヒストリーに追加
-                            if update_history and name not in ["Skill Manager Code"]:
-                                self._add_bot_response_to_history(name, text, icon, component_id)
-                                
-            return dict_data, list_data
+                            message_data = {}
+
+                            if hasattr(message_obj, 'data'):
+                                data_dict = self.object_to_dict(message_obj.data)
+                                if isinstance(data_dict, dict):
+                                    for key, value in data_dict.items():
+                                        message_data[key] = value
+                            
+                            if hasattr(message_obj, 'properties'):
+                                props_dict = self.object_to_dict(message_obj.properties)
+                                if isinstance(props_dict, dict):
+                                    for key, value in props_dict.items():
+                                        message_data[key] = value
+                            
+                            if message_data: # 空でなければ追加
+                                if message_data['sender'] and message_data['sender'] == 'Machine':
+                                    self._add_bot_response_to_history(
+                                        name=message_data['sender_name'],
+                                        text=message_data['text'],
+                                        icon=message_data['icon']
+                                    )
+                                elif message_data['sender'] and message_data['sender'] == 'User':
+                                    self._add_user_message_to_history(
+                                        message=message_data['text']
+                                    )
+                                list_data.append(message_data)
+   
+            return list_data
             
         except Exception as e:
+            if data:
+                print(f"Error: {e}")
             # エラー発生時も問い合わせ中のプレースホルダーを削除
             if update_history:
                 self._remove_pending_messages_from_history()
             raise e
-    
+
+    def object_to_dict(self,obj):
+        """
+        オブジェクトのすべての公開属性を辞書に変換する関数
+        
+        Args:
+            obj: 変換対象のオブジェクト
+            
+        Returns:
+            dict: オブジェクトの属性を含む辞書
+        """
+        if obj is None:
+            return None
+            
+        # オブジェクトが基本型（文字列、数値、真偽値など）の場合はそのまま返す
+        if isinstance(obj, (str, int, float, bool, list, dict)) or obj is None:
+            return obj
+            
+        # vars() が動作する一般的なオブジェクトの場合
+        try:
+            result = {}
+            # __dict__ がある場合はそれを使用
+            attributes = vars(obj)
+            for key, value in attributes.items():
+                # アンダースコアで始まる内部属性は除外（オプション）
+                if not key.startswith('_'):
+                    # 再帰的に処理（ネストされたオブジェクトも辞書に変換）
+                    result[key] = self.object_to_dict(value)
+            return result
+        except TypeError:
+            # vars() が動作しないオブジェクトの場合は dir() を使用
+            result = {}
+            for attr in dir(obj):
+                # アンダースコアで始まる内部属性やメソッドは除外
+                if not attr.startswith('_'):
+                    value = getattr(obj, attr)
+                    # callable はメソッドなので除外
+                    if not callable(value):
+                        result[attr] = self.object_to_dict(value)
+            return result
+        
     def _add_user_message_to_history(self, message: str) -> None:
         """
         ユーザーメッセージをチャット履歴に追加します。

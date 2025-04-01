@@ -1,8 +1,9 @@
-from langflow_chat import Langflow,ChatUI
+from langflow_chat import LangflowChat,ChatUI
 from typing import Dict
 import json
 import voyager.utils as U
 from .env import VoyagerEnv
+from .agents.action import ActionAgent
 
 class Voyager_devbox:
     def __init__(
@@ -14,7 +15,7 @@ class Voyager_devbox:
         env_wait_ticks: int = 1,
         env_request_timeout: int = 600,
         ckpt_dir: str = "ckpt",
-        resume: bool = False,
+        resume: bool = False
     ):
         """
         Voyagerのメインクラス。
@@ -37,7 +38,9 @@ class Voyager_devbox:
         self.env_wait_ticks = env_wait_ticks
         self.recorder = U.EventRecorder(ckpt_dir=ckpt_dir, resume=resume)
         self.resume = resume
+        
         self.last_events = None
+        self.action_agent = ActionAgent(ckpt_dir=ckpt_dir,resume=resume)
         self.tweaks = {
             "ChatOutput-LfK1l": {},
             "MinecraftDataFormatter-IHaIU": {},
@@ -75,9 +78,9 @@ class Voyager_devbox:
             "CustomComponent-qSzkx": {},
             "CombineText-ovBJG": {}
         }
-        self.langflow = Langflow()
+        self.langflow_chat = LangflowChat()
         self.chat_ui = ChatUI(
-            langflow_instance=self.langflow,
+            langflow_instance=self.langflow_chat,
             port=7850,
             host="127.0.0.1",
             title="Langflow Chat UI",
@@ -105,17 +108,25 @@ class Voyager_devbox:
                 }
             )
             self.resume = True  # 次回からはresumeモードとして扱う
-        self.last_events = self.env.step("")  # 空のコマンドを実行してサーバー環境の現在の状態を取得
-        print(f"last_events:\n{self.last_events}")
-        langflow_dict,_ = self.langflow.run_flow(
-            message=self.last_events,
-            endpoint="b9b5f30d-835a-49ca-b76b-6d3b068af83a",
-            tweaks=self.tweaks
-        )
-        action_agent_code = langflow_dict["Action Code"] 
-        skill_manager_code = langflow_dict["Skill Manager Code"]
-        events = json.loads(self.env.step(action_agent_code,programs=skill_manager_code))
-        print(f"events:\n{events}")
-        nearbychests = events[-1][1]["nearbyChests"]
-        print(f"nearbychests:\n{nearbychests}")
-        
+        while True:
+            self.last_events = self.env.step("")  # 空のコマンドを実行してサーバー環境の現在の状態を取得
+            langflow_list = self.langflow_chat.run_flow(
+                message=self.last_events,
+                json_path="langflow_json/Minecraft Curriculum+Action.json",
+                tweaks=self.tweaks,
+                fallback_to_env_vars_at_json_mode=True,
+                env_file_at_json_mode=".env"
+            )
+            for langflow_dict in langflow_list:
+                if langflow_dict["sender_name"] == "Action Code":
+                    action_agent_code = langflow_dict["text"]
+                elif langflow_dict["sender_name"] == "Skill Manager Code":
+                    skill_manager_code = langflow_dict["text"]
+
+            # bot動作後の環境情報の取得
+            events = json.loads(self.env.step(action_agent_code,programs=skill_manager_code))
+            # チェストの内容を更新
+            nearbychests = events[-1][1]["nearbyChests"]
+            self.action_agent.update_chest_memory(nearbychests)
+            print(f"events:\n{events}")
+            print(f"nearbychests:\n{nearbychests}")
