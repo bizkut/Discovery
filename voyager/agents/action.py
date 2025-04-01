@@ -32,15 +32,17 @@ class ActionAgent:
         self.execution_error = execution_error
         U.f_mkdir(f"{ckpt_dir}/action")
         if resume:
-            print(f"\033[32mLoading Action Agent from {ckpt_dir}/action\033[0m")
+            print(f"\033[32m{ckpt_dir}/actionからActionAgentを読み込んでいます\033[0m")
             self.chest_memory = U.load_json(f"{ckpt_dir}/action/chest_memory.json")
         else:
             self.chest_memory = {}
+        '''
         self.llm = ChatOpenAI(
             model_name=model_name,
             temperature=temperature,
             request_timeout=request_timout,
         )
+        '''
 
     # チェストメモリを更新するメソッド
     # 環境内のチェストの位置と内容を記録・更新する

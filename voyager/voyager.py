@@ -63,6 +63,7 @@ class Voyager:
         :param server_port: mineflayerのポート
         :param server_host: mineflayerのホスト（Docker環境では"http://127.0.0.1"を使用）
         :param openai_api_key: OpenAI APIキー
+        
         :param env_wait_ticks: 各ステップの最後に待機するtick数。チャットログが欠けている場合はこの値を増やす必要があります
         :param env_request_timeout: 各ステップの待機秒数。コード実行がこの時間を超えた場合、Python側で接続を終了し、再開が必要になります
         :param reset_placed_if_failed: 失敗時に設置したブロックをリセットするかどうか。建築タスクに有用です
@@ -196,11 +197,12 @@ class Voyager:
             "bot.chat(`/time set ${getNextTime()}`);\n"
             + f"bot.chat('/difficulty {difficulty}');"
         )
+        events = json.loads(events) 
         
         # コンテキストに関連するスキルを取得
         skills = self.skill_manager.retrieve_skills(query=self.context)
         print(
-            f"\033[33mRender Action Agent system message with {len(skills)} skills\033[0m"
+            f"\033[33mアクションエージェントのシステムメッセージを{len(skills)}個のスキルで生成します\033[0m"
         )
         
         # システムメッセージとヒューマンメッセージを生成
@@ -252,12 +254,13 @@ class Voyager:
             
             # プログラムコードと実行コードを結合
             code = parsed_result["program_code"] + "\n" + parsed_result["exec_code"]
-            
+            print(f"\033[32mcode:\n{code}\033[0m")
             # 環境内でコードを実行
             events = self.env.step(
                 code,
                 programs=self.skill_manager.programs,
             )
+            events = json.loads(events)
             
             # イベントを記録
             self.recorder.record(events, self.task)
@@ -265,6 +268,8 @@ class Voyager:
             # チェストの内容を更新
             self.action_agent.update_chest_memory(events[-1][1]["nearbyChests"])
             
+            print(f"events:{events}\ntask:{self.task}\ncontext:{self.context}")
+            print(f"chest_observation:{self.action_agent.render_chest_observation()}")
             # タスク成功の判定
             success, critique = self.critic_agent.check_task_success(
                 events=events,
@@ -291,7 +296,7 @@ class Voyager:
                     f"await givePlacedItemBack(bot, {U.json_dumps(blocks)}, {U.json_dumps(positions)})",
                     programs=self.skill_manager.programs,
                 )
-                
+                new_events = json.loads(new_events)
                 # 最新のインベントリと地形情報で更新
                 events[-1][1]["inventory"] = new_events[-1][1]["inventory"]
                 events[-1][1]["voxels"] = new_events[-1][1]["voxels"]
@@ -362,11 +367,13 @@ class Voyager:
         タスクが成功するか最大試行回数に達するまで実行を続ける
         """
         # エージェントをリセットして新しいタスクを開始
+        print(f"task:{task}\ncontext:{context}\nreset_env:{reset_env}")
         self.reset(task=task, context=context, reset_env=reset_env)
         
         # タスクが完了するまでステップを繰り返す
         while True:
             messages, reward, done, info = self.step()
+            print(f"messages:\n{messages}\nreward:\n{reward}\ndone:\n{done}\ninfo:\n{info}")
             if done:
                 break
         return messages, reward, done, info
@@ -380,63 +387,73 @@ class Voyager:
             # 再開時はインベントリを維持
             self.env.reset(
                 options={
-                    "mode": "soft",
-                    "wait_ticks": self.env_wait_ticks,
+                    "mode": "soft",  # ソフトリセット：インベントリや位置情報を保持
+                    "wait_ticks": self.env_wait_ticks,  # 環境が安定するまで待機するティック数
                 }
             )
         else:
-            # clear the inventory
+            # インベントリをクリア
             self.env.reset(
                 options={
-                    "mode": "hard",
-                    "wait_ticks": self.env_wait_ticks,
+                    "mode": "hard",  # ハードリセット：すべての状態を初期化
+                    "wait_ticks": self.env_wait_ticks,  # 環境が安定するまで待機するティック数
                 }
             )
-            self.resume = True
-        self.last_events = self.env.step("")
+            self.resume = True  # 次回からはresumeモードとして扱う
+        self.last_events = self.env.step("")  # 空のコマンドを実行してサーバー環境の現在の状態を取得
+        self.last_events = json.loads(self.last_events)
 
+        # 学習ループの開始
         while True:
+            # 最大イテレーション数に達したら学習を終了
             if self.recorder.iteration > self.max_iterations:
-                print("Iteration limit reached")
+                print("イテレーション制限に到達しました")
                 break
+            
+            # カリキュラムエージェントに次のタスクを提案させる
             task, context = self.curriculum_agent.propose_next_task(
-                events=self.last_events,
-                chest_observation=self.action_agent.render_chest_observation(),
-                max_retries=5,
+                events=self.last_events,  # 最新の環境イベント
+                chest_observation=self.action_agent.render_chest_observation(),  # チェストの内容
+                max_retries=5,  # タスク提案の最大再試行回数
             )
             print(
-                f"\033[35mStarting task {task} for at most {self.action_agent_task_max_retries} times\033[0m"
+                f"\033[35mタスク「{task}」を最大{self.action_agent_task_max_retries}回実行します\033[0m"
             )
             try:
+                # タスクを実行（rollout関数を呼び出し）
                 messages, reward, done, info = self.rollout(
-                    task=task,
-                    context=context,
-                    reset_env=reset_env,
+                    task=task,  # 実行するタスク内容
+                    context=context,  # カリキュラムエージェントが返したタスクのコンテキスト情報
+                    reset_env=reset_env,  # 環境をリセットするかどうか
                 )
             except Exception as e:
-                time.sleep(3)  # wait for mineflayer to exit
+                print(f"\033[31mエラーが発生しました: {e}\033[0m")
+                time.sleep(3)  # mineflayerが終了するのを待つ
                 info = {
                     "task": task,
-                    "success": False,
+                    "success": False,  # エラーが発生したため失敗とマーク
                 }
-                # reset bot status here
+                # エージェントの状態をリセット
                 self.last_events = self.env.reset(
                     options={
-                        "mode": "hard",
-                        "wait_ticks": self.env_wait_ticks,
-                        "inventory": self.last_events[-1][1]["inventory"],
-                        "equipment": self.last_events[-1][1]["status"]["equipment"],
-                        "position": self.last_events[-1][1]["status"]["position"],
+                        "mode": "hard",  # ハードリセット
+                        "wait_ticks": self.env_wait_ticks,  # 待機ティック数
+                        "inventory": self.last_events[-1][1]["inventory"],  # 前回のインベントリを保持
+                        "equipment": self.last_events[-1][1]["status"]["equipment"],  # 前回の装備を保持
+                        "position": self.last_events[-1][1]["status"]["position"],  # 前回の位置を保持
                     }
                 )
-                # use red color background to print the error
-                print("Your last round rollout terminated due to error:")
+                # 赤色背景でエラーを表示
+                print("前回のロールアウトがエラーにより終了しました:")
                 print(f"\033[41m{e}\033[0m")
 
+            # タスクが成功した場合、新しいスキルとして追加
             if info["success"]:
-                self.skill_manager.add_new_skill(info)
+                self.skill_manager.add_new_skill(info)  # スキルマネージャーに新しいスキルを追加
 
+            # カリキュラムエージェントの探索進捗を更新
             self.curriculum_agent.update_exploration_progress(info)
+            # 完了したタスクと失敗したタスクを表示
             print(
                 f"\033[35mCompleted tasks: {', '.join(self.curriculum_agent.completed_tasks)}\033[0m"
             )
@@ -444,10 +461,11 @@ class Voyager:
                 f"\033[35mFailed tasks: {', '.join(self.curriculum_agent.failed_tasks)}\033[0m"
             )
 
+        # 学習結果を返す
         return {
-            "completed_tasks": self.curriculum_agent.completed_tasks,
-            "failed_tasks": self.curriculum_agent.failed_tasks,
-            "skills": self.skill_manager.skills,
+            "completed_tasks": self.curriculum_agent.completed_tasks,  # 完了したタスクのリスト
+            "failed_tasks": self.curriculum_agent.failed_tasks,  # 失敗したタスクのリスト
+            "skills": self.skill_manager.skills,  # 獲得したスキルのリスト
         }
 
     def decompose_task(self, task):
@@ -474,6 +492,7 @@ class Voyager:
         self.curriculum_agent.completed_tasks = []
         self.curriculum_agent.failed_tasks = []
         self.last_events = self.env.step("")
+        self.last_events = json.loads(self.last_events)
         while self.curriculum_agent.progress < len(sub_goals):
             next_task = sub_goals[self.curriculum_agent.progress]
             context = self.curriculum_agent.get_task_context(next_task)

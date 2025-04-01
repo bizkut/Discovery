@@ -112,16 +112,36 @@ class SkillManager:
         return f"async function {program_name}(bot) {{\n{skill_description}\n}}"
 
     def retrieve_skills(self, query):
+        """
+        クエリに基づいて関連するスキルを取得するメソッド
+        
+        Args:
+            query (str): 検索クエリ文字列
+            
+        Returns:
+            list: 取得したスキルのコードのリスト
+        """
+        # 取得するスキル数を決定（コレクション内のスキル数と上限値の小さい方）
         k = min(self.vectordb._collection.count(), self.retrieval_top_k)
+        
+        # スキルが存在しない場合は空リストを返す
         if k == 0:
             return []
-        print(f"\033[33mSkill Manager retrieving for {k} skills\033[0m")
+            
+        print(f"\033[33mスキルマネージャーが{k}個のスキルを検索中\033[0m")
+        
+        # クエリに基づいて類似スキルを検索
         docs_and_scores = self.vectordb.similarity_search_with_score(query, k=k)
+        
+        # 取得したスキル名を表示
         print(
-            f"\033[33mSkill Manager retrieved skills: "
+            f"\033[33mスキルマネージャーが取得したスキル: "
             f"{', '.join([doc.metadata['name'] for doc, _ in docs_and_scores])}\033[0m"
         )
+        
+        # 取得したスキルのコードをリストに格納
         skills = []
         for doc, _ in docs_and_scores:
             skills.append(self.skills[doc.metadata["name"]]["code"])
+            
         return skills

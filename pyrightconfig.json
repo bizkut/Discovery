@@ -1,0 +1,22 @@
+{
+  "exclude": [
+    "**/.git",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.ipynb_checkpoints",
+    "**/logs",
+    "**/.devcontainer",
+    "**/ckpt",
+    "**/langflow",
+    "**/images"
+  ],
+  "ignore": [
+    "**/.git",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.ipynb_checkpoints"
+  ],
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.11"
+} 

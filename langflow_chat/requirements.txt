@@ -1,0 +1,8 @@
+flask>=3.0.0
+flask-socketio>=5.3.6
+python-socketio>=5.11.1
+python-engineio>=4.9.0
+requests>=2.31.0
+werkzeug>=3.0.1
+urllib3>=2.2.3
+charset-normalizer>=3.2.0
