@@ -7,7 +7,7 @@ load_dotenv()
 
 # 環境変数から情報を取得
 openai_api_key = os.getenv("openai_api_key")
-minecraft_port = os.getenv("MINECRAFT_PORT")
+minecraft_port = 57746
 minecraft_host = os.getenv("MINECRAFT_HOST", "host.docker.internal")  # 環境変数から読み込み、デフォルト値はhost.docker.internal
 
 # 接続情報を表示
