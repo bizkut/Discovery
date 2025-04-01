@@ -1,4 +1,4 @@
-from langflow_chat.langflow import Langflow
+from langflow_chat.langflow import LangflowChat
 from langflow_chat.chat_ui import ChatUI
 
-__all__ = ["Langflow", "ChatUI"] 
+__all__ = ["LangflowChat", "ChatUI"] 

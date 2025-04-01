@@ -5,12 +5,12 @@ from flask import Flask, render_template, request, jsonify
 import threading
 import webbrowser
 from flask_socketio import SocketIO
-from langflow_chat.langflow import Langflow
+from langflow_chat.langflow import LangflowChat
 
 class ChatUI:
     def __init__(
         self,
-        langflow_instance: Optional[Langflow] = None,
+        langflow_instance: Optional[LangflowChat] = None,
         port: int = 5000,
         host: str = "127.0.0.1",
         debug: bool = False,
@@ -31,7 +31,7 @@ class ChatUI:
         """
         self.app = Flask(__name__)
         self.socketio = SocketIO(self.app, cors_allowed_origins="*") if use_websocket else None
-        self.langflow = langflow_instance or Langflow()
+        self.langflow = langflow_instance or LangflowChat()
         self.port = port
         self.host = host
         self.debug = debug
