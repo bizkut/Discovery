@@ -268,6 +268,8 @@ class Voyager:
             # チェストの内容を更新
             self.action_agent.update_chest_memory(events[-1][1]["nearbyChests"])
             
+            print(f"events:{events}\ntask:{self.task}\ncontext:{self.context}")
+            print(f"chest_observation:{self.action_agent.render_chest_observation()}")
             # タスク成功の判定
             success, critique = self.critic_agent.check_task_success(
                 events=events,
