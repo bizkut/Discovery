@@ -78,13 +78,14 @@ class Voyager_devbox:
             "CustomComponent-qSzkx": {},
             "CombineText-ovBJG": {}
         }
-        self.langflow_chat = LangflowChat()
+        self.langflow_chat = LangflowChat(translate_mode=True)
         self.chat_ui = ChatUI(
             langflow_instance=self.langflow_chat,
             port=7850,
             host="127.0.0.1",
             title="Langflow Chat UI",
-            auto_open=True
+            auto_open=True,
+            use_websocket=True,
         )
         # バックグラウンドでチャットUIを起動
         self.chat_ui.start_background()
@@ -112,11 +113,12 @@ class Voyager_devbox:
             self.last_events = self.env.step("")  # 空のコマンドを実行してサーバー環境の現在の状態を取得
             langflow_list = self.langflow_chat.run_flow(
                 message=self.last_events,
-                json_path="langflow_json/Minecraft Curriculum+Action.json",
+                json_path="langflow_json/Voyager_model_GenerateTaskAgent.json",
                 tweaks=self.tweaks,
                 fallback_to_env_vars_at_json_mode=True,
                 env_file_at_json_mode=".env"
             )
+            
             for langflow_dict in langflow_list:
                 if langflow_dict["sender_name"] == "Action Code":
                     action_agent_code = langflow_dict["text"]
@@ -124,9 +126,17 @@ class Voyager_devbox:
                     skill_manager_code = langflow_dict["text"]
 
             # bot動作後の環境情報の取得
-            events = json.loads(self.env.step(action_agent_code,programs=skill_manager_code))
+            events = json.loads(
+                self.env.step(
+                action_agent_code,
+                programs=skill_manager_code,
+                )
+            )
+
+            # 結果の取得
             # チェストの内容を更新
             nearbychests = events[-1][1]["nearbyChests"]
             self.action_agent.update_chest_memory(nearbychests)
             print(f"events:\n{events}")
             print(f"nearbychests:\n{nearbychests}")
+            print(input("Enter to continue"))
