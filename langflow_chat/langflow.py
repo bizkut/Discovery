@@ -1,10 +1,11 @@
 import argparse
 import json
 from langflow.load import run_flow_from_json
-import requests
+from deep_translator import GoogleTranslator
 from typing import Optional, List, Dict, Any, Tuple, Callable
 import warnings
 from datetime import datetime
+import uuid
 
 try:
     from langflow.load import upload_file
@@ -13,10 +14,12 @@ except ImportError:
     upload_file = None
 
 class LangflowChat:
-    def __init__(self):
+    def __init__(self,translate_mode: bool = False,translate_language: str = "ja"):
         self.chat_history: List[Dict[str, Any]] = []
         # メッセージ更新時のコールバック関数
         self.on_message_update: Optional[Callable] = None
+        self.translate_mode = translate_mode
+        self.translate_language = translate_language
 
     def register_update_callback(self, callback: Callable) -> None:
         """
@@ -32,8 +35,9 @@ class LangflowChat:
             json_path: str = None,
             fallback_to_env_vars_at_json_mode: bool = True,
             env_file_at_json_mode: str = ".env",
-            tweaks: Optional[dict] = None,
-            update_history: bool = True) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
+            tweaks: Optional[dict] = {},
+            update_history: bool = True,
+            session_id: str = None) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
         
         """
         Run a flow with a given message and optional tweaks.
@@ -48,6 +52,7 @@ class LangflowChat:
         :param update_history: Whether to update chat history, default is True
         :return: The JSON response from the flow as (dict_data, list_data)
         """
+        
         # ユーザーメッセージをヒストリーに追加
         if update_history:
             self._add_user_message_to_history(message)
@@ -59,7 +64,8 @@ class LangflowChat:
                 input_value=message,
                 tweaks=tweaks,
                 fallback_to_env_vars=fallback_to_env_vars_at_json_mode,
-                env_file=env_file_at_json_mode
+                env_file=env_file_at_json_mode,
+                session_id=session_id
             )
                 
             # 問い合わせ中のプレースホルダーを削除
@@ -89,7 +95,9 @@ class LangflowChat:
                                         message_data[key] = value
                             
                             if message_data: # 空でなければ追加
-                                if message_data['sender'] and message_data['sender'] == 'Machine':
+                                if message_data['sender_name'] == 'Skill Manager Code':
+                                    pass
+                                elif message_data['sender'] and message_data['sender'] == 'Machine':
                                     self._add_bot_response_to_history(
                                         name=message_data['sender_name'],
                                         text=message_data['text'],
@@ -104,8 +112,8 @@ class LangflowChat:
             return list_data
             
         except Exception as e:
-            if data:
-                print(f"Error: {e}")
+            print(f"Error: {e}")
+            
             # エラー発生時も問い合わせ中のプレースホルダーを削除
             if update_history:
                 self._remove_pending_messages_from_history()
@@ -157,6 +165,8 @@ class LangflowChat:
         
         :param message: ユーザーからのメッセージ
         """
+        if self.translate_mode:
+            message = GoogleTranslator(source='auto', target=self.translate_language).translate(message)
         self.chat_history.append({
             "role": "user",
             "name": "User",
@@ -211,6 +221,8 @@ class LangflowChat:
         :param icon: ボットのアイコン（オプション）
         :param component_id: コンポーネントID（オプション）
         """
+        if self.translate_mode:
+            text = GoogleTranslator(source='auto', target=self.translate_language).translate(text)
         self.chat_history.append({
             "role": "assistant",
             "name": name,

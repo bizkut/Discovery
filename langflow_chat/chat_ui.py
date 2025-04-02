@@ -315,7 +315,6 @@ class ChatUI:
         チャット更新時にWebSocket経由で通知するコールバック
         """
         if self.use_websocket and self.socketio:
-            print("メッセージ更新通知を送信")
             self.socketio.emit('chat_updated', {
                 "history": self.langflow.get_chat_history()
             }) 
