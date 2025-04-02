@@ -707,6 +707,87 @@
         "sourceHandle": "{œdataTypeœ:œMinecraftDataFormatterœ,œidœ:œMinecraftDataFormatter-y3fIUœ,œnameœ:œoutputœ,œoutput_typesœ:[œMessageœ]}",
         "target": "ChatOutput-wNLbl",
         "targetHandle": "{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-wNLblœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}"
+      },
+      {
+        "data": {
+          "sourceHandle": {
+            "dataType": "TaskExtractor",
+            "id": "TaskExtractor-wECL8",
+            "name": "task",
+            "output_types": [
+              "Message"
+            ]
+          },
+          "targetHandle": {
+            "fieldName": "input_value",
+            "id": "ChatOutput-MuwIQ",
+            "inputTypes": [
+              "Data",
+              "DataFrame",
+              "Message"
+            ],
+            "type": "other"
+          }
+        },
+        "id": "xy-edge__TaskExtractor-wECL8{œdataTypeœ:œTaskExtractorœ,œidœ:œTaskExtractor-wECL8œ,œnameœ:œtaskœ,œoutput_typesœ:[œMessageœ]}-ChatOutput-MuwIQ{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-MuwIQœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}",
+        "source": "TaskExtractor-wECL8",
+        "sourceHandle": "{œdataTypeœ:œTaskExtractorœ,œidœ:œTaskExtractor-wECL8œ,œnameœ:œtaskœ,œoutput_typesœ:[œMessageœ]}",
+        "target": "ChatOutput-MuwIQ",
+        "targetHandle": "{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-MuwIQœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}"
+      },
+      {
+        "data": {
+          "sourceHandle": {
+            "dataType": "Agent",
+            "id": "Agent-WFlla",
+            "name": "response",
+            "output_types": [
+              "Message"
+            ]
+          },
+          "targetHandle": {
+            "fieldName": "input_value",
+            "id": "ChatOutput-28dFX",
+            "inputTypes": [
+              "Data",
+              "DataFrame",
+              "Message"
+            ],
+            "type": "other"
+          }
+        },
+        "id": "xy-edge__Agent-WFlla{œdataTypeœ:œAgentœ,œidœ:œAgent-WFllaœ,œnameœ:œresponseœ,œoutput_typesœ:[œMessageœ]}-ChatOutput-28dFX{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-28dFXœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}",
+        "source": "Agent-WFlla",
+        "sourceHandle": "{œdataTypeœ:œAgentœ,œidœ:œAgent-WFllaœ,œnameœ:œresponseœ,œoutput_typesœ:[œMessageœ]}",
+        "target": "ChatOutput-28dFX",
+        "targetHandle": "{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-28dFXœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}"
+      },
+      {
+        "data": {
+          "sourceHandle": {
+            "dataType": "Agent",
+            "id": "Agent-7SQ67",
+            "name": "response",
+            "output_types": [
+              "Message"
+            ]
+          },
+          "targetHandle": {
+            "fieldName": "input_value",
+            "id": "ChatOutput-dyiZk",
+            "inputTypes": [
+              "Data",
+              "DataFrame",
+              "Message"
+            ],
+            "type": "other"
+          }
+        },
+        "id": "xy-edge__Agent-7SQ67{œdataTypeœ:œAgentœ,œidœ:œAgent-7SQ67œ,œnameœ:œresponseœ,œoutput_typesœ:[œMessageœ]}-ChatOutput-dyiZk{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-dyiZkœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}",
+        "source": "Agent-7SQ67",
+        "sourceHandle": "{œdataTypeœ:œAgentœ,œidœ:œAgent-7SQ67œ,œnameœ:œresponseœ,œoutput_typesœ:[œMessageœ]}",
+        "target": "ChatOutput-dyiZk",
+        "targetHandle": "{œfieldNameœ:œinput_valueœ,œidœ:œChatOutput-dyiZkœ,œinputTypesœ:[œDataœ,œDataFrameœ,œMessageœ],œtypeœ:œotherœ}"
       }
     ],
     "nodes": [
@@ -7302,14 +7383,15 @@
           },
           "type": "ChatOutput"
         },
+        "dragging": false,
         "id": "ChatOutput-M65wP",
         "measured": {
           "height": 190,
           "width": 320
         },
         "position": {
-          "x": 2397.0522121331514,
-          "y": 3832.025055159456
+          "x": 2394.270725466737,
+          "y": 3901.0059244865242
         },
         "selected": false,
         "type": "genericNode"
@@ -7465,9 +7547,9 @@
       }
     ],
     "viewport": {
-      "x": 609.1178333789763,
-      "y": 273.3543463473585,
-      "zoom": 0.6625365290676384
+      "x": -865.8145312219885,
+      "y": -698.3638664650296,
+      "zoom": 0.3640155296323597
     }
   },
   "description": "Navigate the Linguistic Landscape, Discover Opportunities.",
