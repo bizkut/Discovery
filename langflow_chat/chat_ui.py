@@ -33,7 +33,28 @@ class ChatUI:
         :param mineflayer_api_url: MineflayerのAPIサーバーURL
         """
         self.app = Flask(__name__)
-        self.socketio = SocketIO(self.app, cors_allowed_origins="*") if use_websocket else None
+        
+        # WebSocketの設定
+        if use_websocket:
+            # より詳細なログを有効にする
+            if debug:
+                self.app.logger.setLevel('DEBUG')
+                
+            # Socket.IOサーバーの設定
+            socketio_config = {
+                'cors_allowed_origins': "*",      # CORSを許可
+                'ping_timeout': 60,               # pingタイムアウト（秒）
+                'ping_interval': 25,              # ping間隔（秒）
+                'max_http_buffer_size': 10e6,     # バッファサイズ（10MB）
+                'async_mode': 'threading',        # 非同期モード
+                'logger': debug,                  # ロギングの有効化
+                'engineio_logger': debug          # Engine.IOのロギング
+            }
+            
+            self.socketio = SocketIO(self.app, **socketio_config)
+        else:
+            self.socketio = None
+            
         self.langflow = langflow_instance or LangflowChat()
         self.port = port
         self.host = host
@@ -43,6 +64,10 @@ class ChatUI:
         self.server_thread = None
         self.use_websocket = use_websocket
         self.mineflayer_api_url = mineflayer_api_url
+        
+        # コールバックの登録（LangflowChatの更新を受け取る）
+        if self.use_websocket:
+            self.langflow.register_update_callback(self._notify_chat_updated)
         
         # ルートの設定
         self._setup_routes()
@@ -97,20 +122,25 @@ class ChatUI:
                 return jsonify({"error": "メッセージとエンドポイントは必須です"}), 400
             
             try:
-                dict_data, _ = self.langflow.run_flow(
+                # まずユーザーメッセージをチャット履歴に追加（内部でWebSocketイベントを発行）
+                self._add_user_message_to_history(message)
+                
+                # 問い合わせ中のメッセージを追加（内部でWebSocketイベントを発行）
+                self._add_pending_message_to_history()
+                
+                # Langflowにメッセージを送信（update_history=Falseに設定して、内部での履歴更新を無効化）
+                dict_data = self.langflow.run_flow(
                     message=message,
                     endpoint=endpoint,
                     output_type=data.get('output_type', 'chat'),
                     input_type=data.get('input_type', 'chat'),
                     tweaks=data.get('tweaks'),
-                    api_key=data.get('api_key')
+                    api_key=data.get('api_key'),
+                    update_history=False  # 内部での履歴更新を無効化
                 )
                 
-                # WebSocket経由で更新を通知
-                if self.use_websocket:
-                    self.socketio.emit('chat_updated', {
-                        "history": self.langflow.get_chat_history()
-                    })
+                # 問い合わせ中のメッセージを削除（内部でWebSocketイベントを発行）
+                self._remove_pending_messages_from_history()
                 
                 return jsonify({
                     "success": True,
@@ -118,6 +148,8 @@ class ChatUI:
                     "history": self.langflow.get_chat_history()
                 })
             except Exception as e:
+                # エラー発生時も問い合わせ中のメッセージを削除（内部でWebSocketイベントを発行）
+                self._remove_pending_messages_from_history()
                 return jsonify({"error": str(e)}), 500
         
         @self.app.route('/api/clear_history', methods=['POST'])
@@ -141,23 +173,87 @@ class ChatUI:
             shutdown_func()
             return 'サーバーをシャットダウンしています...'
     
+    def _add_user_message_to_history(self, message: str) -> None:
+        """
+        ユーザーメッセージをチャット履歴に追加します。
+        """
+        self.langflow._add_user_message_to_history(message)
+        
+        # WebSocketが有効な場合は更新を通知
+        if self.use_websocket:
+            self.socketio.emit('chat_updated', {
+                "history": self.langflow.get_chat_history()
+            })
+    
+    def _add_pending_message_to_history(self) -> None:
+        """
+        問い合わせ中のプレースホルダーメッセージを追加します。
+        """
+        self.langflow._add_pending_message_to_history()
+        
+        # WebSocketが有効な場合は更新を通知
+        if self.use_websocket:
+            self.socketio.emit('chat_updated', {
+                "history": self.langflow.get_chat_history()
+            })
+    
+    def _remove_pending_messages_from_history(self) -> None:
+        """
+        問い合わせ中のメッセージを削除します。
+        """
+        self.langflow._remove_pending_messages_from_history()
+        
+        # WebSocketが有効な場合は更新を通知
+        if self.use_websocket:
+            self.socketio.emit('chat_updated', {
+                "history": self.langflow.get_chat_history()
+            })
+            
+    def _add_bot_response_to_history(self, name: str, text: str, icon: Optional[str] = None) -> None:
+        """
+        ボットの応答をチャット履歴に追加します。
+        """
+        self.langflow._add_bot_response_to_history(name, text, icon)
+        
+        # WebSocketが有効な場合は更新を通知
+        if self.use_websocket:
+            self.socketio.emit('chat_updated', {
+                "history": self.langflow.get_chat_history()
+            })
+            
     def _setup_socketio_events(self):
         """
         WebSocketのイベントハンドラを設定
         """
         @self.socketio.on('connect')
         def handle_connect():
-            # クライアント接続時に最新のチャット履歴を送信
+            # クライアント接続時の処理
+            print(f"クライアント接続: {request.sid}")
+            # 最新のチャット履歴を送信
             self.socketio.emit('chat_updated', {
                 "history": self.langflow.get_chat_history()
-            })
+            }, room=request.sid)  # 接続したクライアントのみに送信
+            print(f"初期履歴送信: {len(self.langflow.get_chat_history())}件のメッセージ")
+        
+        @self.socketio.on('disconnect')
+        def handle_disconnect():
+            # クライアント切断時の処理
+            print(f"クライアント切断: {request.sid}")
+        
+        @self.socketio.on('error')
+        def handle_error(error):
+            # エラー発生時の処理
+            print(f"WebSocketエラー: {error}")
         
         @self.socketio.on('request_history')
         def handle_request_history():
             # クライアントからの履歴リクエスト
+            print(f"履歴リクエスト: {request.sid}")
+            history = self.langflow.get_chat_history()
+            print(f"履歴送信: {len(history)}件のメッセージ")
             self.socketio.emit('chat_updated', {
-                "history": self.langflow.get_chat_history()
-            })
+                "history": history
+            }, room=request.sid)  # リクエストしたクライアントのみに送信
     
     def start(self):
         """
@@ -213,3 +309,13 @@ class ChatUI:
                 print("警告: サーバーのシャットダウンに失敗しました。プロセス終了時に自動的に停止します。")
             else:
                 print("サーバーが正常に停止しました。") 
+
+    def _notify_chat_updated(self):
+        """
+        チャット更新時にWebSocket経由で通知するコールバック
+        """
+        if self.use_websocket and self.socketio:
+            print("メッセージ更新通知を送信")
+            self.socketio.emit('chat_updated', {
+                "history": self.langflow.get_chat_history()
+            }) 

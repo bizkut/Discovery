@@ -2,7 +2,7 @@ import argparse
 import json
 from langflow.load import run_flow_from_json
 import requests
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Callable
 import warnings
 from datetime import datetime
 
@@ -15,6 +15,16 @@ except ImportError:
 class LangflowChat:
     def __init__(self):
         self.chat_history: List[Dict[str, Any]] = []
+        # メッセージ更新時のコールバック関数
+        self.on_message_update: Optional[Callable] = None
+
+    def register_update_callback(self, callback: Callable) -> None:
+        """
+        メッセージ更新時のコールバック関数を登録します。
+
+        :param callback: メッセージ更新時に呼び出される関数
+        """
+        self.on_message_update = callback
 
     def run_flow(
             self,
@@ -154,6 +164,10 @@ class LangflowChat:
             "icon": "👤",
             "timestamp": datetime.now().isoformat()
         })
+        
+        # メッセージ更新時のコールバックを呼び出し
+        if self.on_message_update:
+            self.on_message_update()
     
     def _add_pending_message_to_history(self) -> None:
         """
@@ -167,12 +181,20 @@ class LangflowChat:
             "is_pending": True,
             "timestamp": datetime.now().isoformat()
         })
+        
+        # メッセージ更新時のコールバックを呼び出し
+        if self.on_message_update:
+            self.on_message_update()
     
     def _remove_pending_messages_from_history(self) -> None:
         """
         チャット履歴から問い合わせ中のメッセージを削除します。
         """
         self.chat_history = [msg for msg in self.chat_history if not msg.get('is_pending', False)]
+        
+        # メッセージ更新時のコールバックを呼び出し
+        if self.on_message_update:
+            self.on_message_update()
     
     def _add_bot_response_to_history(
             self, 
@@ -197,6 +219,10 @@ class LangflowChat:
             "component_id": component_id,
             "timestamp": datetime.now().isoformat()
         })
+        
+        # メッセージ更新時のコールバックを呼び出し
+        if self.on_message_update:
+            self.on_message_update()
     
     def get_chat_history(self) -> List[Dict[str, Any]]:
         """
@@ -210,4 +236,8 @@ class LangflowChat:
         """
         チャット履歴をクリアします。
         """
-        self.chat_history = [] 
+        self.chat_history = []
+        
+        # メッセージ更新時のコールバックを呼び出し
+        if self.on_message_update:
+            self.on_message_update() 

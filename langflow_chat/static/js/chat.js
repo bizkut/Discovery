@@ -16,16 +16,40 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // WebSocketが有効な場合、接続する
     if (useWebSocket) {
-        socket = io();
+        // SocketIOの接続オプション
+        const socketOptions = {
+            reconnection: true,         // 再接続を有効化
+            reconnectionAttempts: 5,    // 再接続の試行回数
+            reconnectionDelay: 1000,    // 再接続の遅延（ミリ秒）
+            timeout: 20000              // タイムアウト（ミリ秒）
+        };
+        
+        socket = io(socketOptions);
         
         // WebSocketイベントの設定
         socket.on('connect', () => {
-            console.log('WebSocket接続完了');
+            console.log('WebSocket接続完了 - ID:', socket.id);
+            addSystemMessage('WebSocketサーバーに接続しました', 'success');
+            
+            // 接続後に履歴データをリクエスト
+            socket.emit('request_history');
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('WebSocket切断');
+            addSystemMessage('WebSocketサーバーから切断されました', 'error');
+        });
+        
+        socket.on('connect_error', (error) => {
+            console.error('WebSocket接続エラー:', error);
+            addSystemMessage('WebSocketサーバーへの接続に失敗しました', 'error');
         });
         
         socket.on('chat_updated', (data) => {
+            console.log('チャット更新イベント受信', data);
             // チャット履歴が更新された
             const history = data.history || [];
+            console.log(`更新: ${history.length}件のメッセージ (前回: ${lastHistoryLength}件)`);
             updateChatHistoryDisplay(history);
             lastHistoryLength = history.length;
         });
@@ -54,14 +78,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // UIに即座にユーザーメッセージを表示
-        addUserMessage(message);
-        
-        // 問い合わせ中の表示を追加
-        const pendingMessageId = addPendingMessage();
-        
-        // 入力フィールドをクリア
+        // 入力フィールドをクリア（WebSocketの場合は即座にクリア）
         messageInput.value = '';
+        
+        // WebSocketを使わない場合のみUIを手動で更新
+        if (!useWebSocket) {
+            // UIに即座にユーザーメッセージを表示
+            addUserMessage(message);
+            
+            // 問い合わせ中の表示を追加
+            const pendingMessageId = addPendingMessage();
+        }
         
         try {
             // WebSocketを使わない場合はポーリングを一時停止（重複防止のため）
@@ -83,8 +110,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(requestBody)
             });
             
-            // 問い合わせ中の表示を削除
-            removePendingMessage(pendingMessageId);
+            // WebSocketを使わない場合のみ手動で表示を更新
+            if (!useWebSocket) {
+                // 問い合わせ中の表示を削除
+                removePendingMessage(pendingMessageId);
+            }
             
             const data = await response.json();
             
@@ -106,7 +136,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } catch (error) {
-            removePendingMessage(pendingMessageId);
             console.error('Error:', error);
             addSystemMessage('通信エラーが発生しました', 'error');
             
