@@ -57,7 +57,23 @@ class LangflowChat:
         if update_history:
             self._add_user_message_to_history(message)
             self._add_pending_message_to_history()
+
+        if session_id is None:
+            session_id = str(uuid.uuid4())
+
+        # すべてのコンポーネントのsession_idフィールドを更新
+        for component_id, component_data in tweaks.items():
+            if isinstance(component_data, dict) and "session_id" in component_data:
+                component_data["session_id"] = session_id
+            
+            # Agentコンポーネントの場合、sender_nameが空でないことを確認
+            if component_id.startswith("Agent-") and isinstance(component_data, dict):
+                if not component_data.get("sender_name"):
+                    component_data["sender_name"] = "Agent"
+                if not component_data.get("sender"):
+                    component_data["sender"] = "Machine"
         
+        # フローの実行
         try:
             data = run_flow_from_json(
                 flow=json_path,
