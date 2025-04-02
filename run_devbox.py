@@ -38,7 +38,6 @@ minecraft_host = os.getenv("MINECRAFT_HOST", "host.docker.internal")  # 環境�
 print(f"Minecraft接続情報:")
 print(f"- ポート: {minecraft_port}")
 print(f"- Minecraftホスト: {minecraft_host}")
-print(f"- Mineflayerホスト: localhost (コンテナ内)")
 
 # Minecraftサーバーへの接続確認
 if not check_minecraft_connection(minecraft_host, minecraft_port):
