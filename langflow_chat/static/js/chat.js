@@ -4,13 +4,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const endpoint = document.getElementById('endpoint');
     const messageInput = document.getElementById('msg');
     const clearHistoryBtn = document.getElementById('clear-history');
+    const debugModeBtn = document.getElementById('debug-mode');
     
     // テンプレート
     const userMessageTemplate = document.getElementById('user-message-template');
     const botMessageTemplate = document.getElementById('bot-message-template');
     
     // WebSocketの使用有無
-    const useWebSocket = window.USE_WEBSOCKET === true;
+    const useWebSocket = window.USE_WEBSOCKET === "true";
     let socket = null;
     
     // WebSocketが有効な場合、接続する
@@ -68,16 +69,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 stopPolling();
             }
             
+            const requestBody = {
+                message: message,
+                endpoint: endpointValue
+            };
+            
             // APIにメッセージを送信
             const response = await fetch('/api/send_message', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    message: message,
-                    endpoint: endpointValue
-                })
+                body: JSON.stringify(requestBody)
             });
             
             // 問い合わせ中の表示を削除
@@ -306,14 +309,16 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // システムメッセージを追加（エラーや通知）
     function addSystemMessage(text, type = 'info') {
-        const div = document.createElement('div');
-        div.classList.add('message', 'system-message', `system-${type}`);
-        div.innerHTML = `
-            <p class="message-text">${text}</p>
-            <div class="message-time">${formatTime(new Date())}</div>
-        `;
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', 'system-message', `system-message-${type}`);
         
-        chatMessages.appendChild(div);
+        const messageText = document.createElement('p');
+        messageText.classList.add('message-text');
+        messageText.textContent = text;
+        
+        messageDiv.appendChild(messageText);
+        chatMessages.appendChild(messageDiv);
+        
         scrollToBottom();
     }
     

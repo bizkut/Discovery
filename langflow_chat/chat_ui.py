@@ -1,5 +1,6 @@
 import os
 import json
+import requests
 from typing import Optional, List, Dict, Any, Union
 from flask import Flask, render_template, request, jsonify
 import threading
@@ -16,7 +17,8 @@ class ChatUI:
         debug: bool = False,
         title: str = "Langflow Chat",
         auto_open: bool = True,
-        use_websocket: bool = True
+        use_websocket: bool = True,
+        mineflayer_api_url: str = "http://localhost:3000"
     ):
         """
         ChatGPTのようなチャットUIを提供するクラス。
@@ -28,6 +30,7 @@ class ChatUI:
         :param title: チャットUIのタイトル
         :param auto_open: 自動的にブラウザで開くかどうか
         :param use_websocket: WebSocketを使用してリアルタイム更新するかどうか
+        :param mineflayer_api_url: MineflayerのAPIサーバーURL
         """
         self.app = Flask(__name__)
         self.socketio = SocketIO(self.app, cors_allowed_origins="*") if use_websocket else None
@@ -39,6 +42,7 @@ class ChatUI:
         self.auto_open = auto_open
         self.server_thread = None
         self.use_websocket = use_websocket
+        self.mineflayer_api_url = mineflayer_api_url
         
         # ルートの設定
         self._setup_routes()
@@ -54,6 +58,30 @@ class ChatUI:
         @self.app.route('/')
         def index():
             return render_template('chat.html', title=self.title, use_websocket=self.use_websocket)
+        
+        @self.app.route('/debug')
+        def debug():
+            return render_template('debug.html', mineflayer_api_url=self.mineflayer_api_url)
+        
+        @self.app.route('/api/proxy/mineflayer', methods=['POST'])
+        def proxy_mineflayer():
+            data = request.json
+            endpoint = data.get('endpoint')
+            payload = data.get('payload', {})
+            
+            if not endpoint:
+                return jsonify({"error": "エンドポイントは必須です"}), 400
+            
+            try:
+                response = requests.post(
+                    f"{self.mineflayer_api_url}{endpoint}", 
+                    json=payload,
+                    timeout=300  # 長時間のレスポンスに対応
+                )
+                
+                return jsonify(response.json()), response.status_code
+            except requests.exceptions.RequestException as e:
+                return jsonify({"error": f"APIサーバーへの接続に失敗しました: {str(e)}"}), 500
         
         @self.app.route('/api/chat_history', methods=['GET'])
         def get_chat_history():
