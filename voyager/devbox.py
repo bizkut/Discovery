@@ -4,6 +4,7 @@ import json
 import voyager.utils as U
 from .env import VoyagerEnv
 from .agents.action import ActionAgent
+from .agents.critic import CriticAgent
 
 class Voyager_devbox:
     def __init__(
@@ -41,6 +42,7 @@ class Voyager_devbox:
         
         self.last_events = None
         self.action_agent = ActionAgent(ckpt_dir=ckpt_dir,resume=resume)
+        self.critic_agent = CriticAgent()
         self.tweaks = {
             "ChatOutput-LfK1l": {},
             "MinecraftDataFormatter-IHaIU": {},
@@ -109,6 +111,7 @@ class Voyager_devbox:
                 }
             )
             self.resume = True  # 次回からはresumeモードとして扱う
+        
         while True:
             self.last_events = self.env.step("")  # 空のコマンドを実行してサーバー環境の現在の状態を取得
             langflow_list = self.langflow_chat.run_flow(
@@ -124,6 +127,10 @@ class Voyager_devbox:
                     action_agent_code = langflow_dict["text"]
                 elif langflow_dict["sender_name"] == "Skill Manager Code":
                     skill_manager_code = langflow_dict["text"]
+                elif langflow_dict["sender_name"] == "Curriculum Task Agent":
+                    task = langflow_dict["text"]
+                elif langflow_dict["sender_name"] == "Task Question":
+                    context = langflow_dict["text"]
 
             # bot動作後の環境情報の取得
             events = json.loads(
@@ -133,10 +140,22 @@ class Voyager_devbox:
                 )
             )
 
-            # 結果の取得
+            # 結果の取得s
             # チェストの内容を更新
             nearbychests = events[-1][1]["nearbyChests"]
-            self.action_agent.update_chest_memory(nearbychests)
-            print(f"events:\n{events}")
-            print(f"nearbychests:\n{nearbychests}")
+            chest_observation=self.action_agent.update_chest_memory(nearbychests)
+
+            print(f"system_prompt:\n{self.critic_agent.render_system_message()}")
+            print(f"user_prompt:\n{human_message}")
+            print(f"chest_observation:\n{chest_observation}")
             print(input("Enter to continue"))
+            human_message = self.critic_agent.render_human_message(
+                events=events,
+                task=task,
+                context=context,
+                chest_observation=chest_observation,
+            )
+            messages = [
+                self.critic_agent.render_system_message(),
+                human_message,
+            ]
