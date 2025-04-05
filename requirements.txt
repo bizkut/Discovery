@@ -1,19 +1,7 @@
-# Voyager 依存パッケージ
-tqdm
-langchain
-langchain_openai
-langchain_community
+# mineflayer
 javascript
-setuptools
-openai
-chardet
-chromadb
-tiktoken
-requests
-gymnasium
-psutil
-minecraft_launcher_lib
 python-dotenv
+# minecraft_launcher_lib
 
 # LangFlow
 deep-translator
