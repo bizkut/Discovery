@@ -26,9 +26,9 @@ RUN pip install uv && \
 WORKDIR /app
 COPY requirements.txt setup.py README.md ./
 
+# プロジェクトの依存関係をインストール
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt && \
-    pip install -e .
+    pip install -r requirements.txt
 
 # プロジェクトのソースコードをコピー
 WORKDIR /app
@@ -38,28 +38,15 @@ COPY . .
 WORKDIR /app/langflow_chat
 RUN uv pip install --system -r requirements.txt
 
-# 親ディレクトリに移動してmineflayerの依存関係をインストール
-WORKDIR /app/voyager/env/mineflayer
-RUN npm install || (echo "npm installに失敗しました。パスやファイルの存在を確認してください。" && exit 1)
-
-# mineflayer-collectblockの依存関係をインストールしてコンパイル
-WORKDIR /app/voyager/env/mineflayer/mineflayer-collectblock
-RUN npx tsc
-
-WORKDIR /app/voyager/env/mineflayer
-RUN npm install
+# mineflayerプロジェクトのセットアップ
+WORKDIR /app/mineflayer
+RUN npm install mineflayer && \
+    npm install --save mineflayer-collectblock
 
 # 作業ディレクトリをルートに戻す
 WORKDIR /app
-
-# エントリポイントスクリプトの設定
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
 
 # Langflowのポートを公開
 EXPOSE 7860
 # ChatUIのポートも公開
 EXPOSE 7850
-
-# デフォルトコマンド
-CMD ["/docker-entrypoint.sh"]
