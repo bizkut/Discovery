@@ -41,7 +41,8 @@ RUN uv pip install --system -r requirements.txt
 # mineflayerプロジェクトのセットアップ
 WORKDIR /app/mineflayer
 RUN npm install mineflayer && \
-    npm install --save mineflayer-collectblock
+    npm install --save mineflayer-collectblock && \
+    npm install --save mineflayer-pathfinder
 
 # 作業ディレクトリをルートに戻す
 WORKDIR /app
