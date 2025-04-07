@@ -1,0 +1,180 @@
+from javascript import require, On, Once, AsyncTask, once, off
+from dotenv import load_dotenv
+import os
+import asyncio
+from skill.skills import Skills
+
+class Discovery:
+    def __init__(self):
+        load_dotenv()
+        self.load_env()
+        self.mineflayer = require("mineflayer")
+
+        self.bot = None
+        self.mcdata = None
+        self.is_connected = False
+        
+    def load_env(self):
+        self.minecraft_host = os.getenv("MINECRAFT_HOST", "host.docker.internal")
+        self.minecraft_port = os.getenv("MINECRAFT_PORT")
+
+    def load_plugins(self):
+        # pathfinder
+        self.pathfinder = require("mineflayer-pathfinder")
+        self.bot.loadPlugin(self.pathfinder.pathfinder)
+        self.movements = self.pathfinder.Movements(self.bot, self.mcdata)
+    
+    def bot_join(self):
+        """ボットをサーバーに接続します"""
+        self.is_connected = False
+        
+        self.bot = self.mineflayer.createBot({
+            "host": self.minecraft_host,
+            "port": self.minecraft_port,
+            "username": "BOT",
+        })
+        
+        # スポーン時の処理
+        def handle_spawn(*args):
+            print("ボットがサーバーにスポーンしました")
+            self.is_connected = True
+            
+        # エラー時の処理
+        def handle_error(err, *args):
+            print(f"ボット接続エラー: {err}")
+            self.is_connected = False
+            
+        # 切断時の処理
+        def handle_end(*args):
+            print("サーバー接続が終了しました")
+            self.is_connected = False
+        
+        # イベントリスナーを設定
+        self.bot.once('spawn', handle_spawn)
+        self.bot.on('error', handle_error)
+        self.bot.on('end', handle_end)
+        
+        self.mcdata = require("minecraft-data")(self.bot.version)
+        self.load_plugins()
+    
+    async def check_server_active(self, timeout=10):
+        """
+        サーバーがアクティブかどうかを確認します
+        
+        Args:
+            timeout (int): タイムアウト秒数
+            
+        Returns:
+            bool: サーバーがアクティブであればTrue、それ以外はFalse
+        """
+        if not self.bot:
+            self.bot_join()
+            
+        start_time = asyncio.get_event_loop().time()
+        while not self.is_connected:
+            # タイムアウトチェック
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                print(f"サーバー接続タイムアウト ({timeout}秒)")
+                return False
+            await asyncio.sleep(0.5)
+            
+        return True
+    
+    def bot_move(self, x, y, z):
+        self.bot.pathfinder.setMovements(self.movements)
+        self.bot.pathfinder.setGoal(self.pathfinder.goals.GoalNear(x, y, z, 1))
+        self.bot.chat("移動します")
+        
+    def create_skills(self):
+        """Skillsクラスのインスタンスを作成して返します"""
+        if not self.bot:
+            self.bot_join()
+        return Skills(self)
+
+    def is_server_active(self):
+        """
+        現在のサーバー接続状態を確認します（非同期ではない）
+        
+        Returns:
+            bool: 接続中であればTrue、それ以外はFalse
+        """
+        if not self.bot:
+            return False
+            
+        # 接続状態を確認
+        return self.is_connected
+        
+    def get_server_info(self):
+        """
+        サーバーの基本情報を取得します
+        
+        Returns:
+            dict: サーバー情報を含む辞書
+        """
+        if not self.is_server_active():
+            return {"active": False}
+            
+        try:
+            return {
+                "active": True,
+                "version": self.bot.version,
+                "players": list(self.bot.players.keys()),
+                "player_count": len(self.bot.players),
+                "host": self.minecraft_host,
+                "port": self.minecraft_port
+            }
+        except Exception as e:
+            print(f"サーバー情報取得エラー: {e}")
+            return {"active": False, "error": str(e)}
+
+async def run_craft_example():
+    """Skillsクラスのcraft_recipeメソッドを使用する例"""
+    # Discoveryインスタンスを作成し、Skillsを初期化
+    discovery = Discovery()
+    discovery.bot_join()
+    
+    # サーバーがアクティブか確認
+    server_active = await discovery.check_server_active(timeout=15)
+    if not server_active:
+        print("サーバーに接続できません。終了します。")
+        return
+        
+    skills = discovery.create_skills()
+    
+    try:
+        # インベントリの状態を確認
+        inventory = skills.get_inventory_counts()
+        print("現在のインベントリ:", inventory)
+            
+        # 近くにある木を集める
+        print("近くの木を収集します...")
+        await skills.collect_block("oak_log", 2)
+        
+    except Exception as e:
+        print(f"エラーが発生しました: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == "__main__":
+    import sys
+    
+    # サーバー接続チェックだけを行うモード
+    if len(sys.argv) > 1 and sys.argv[1] == "--check-server":
+        async def check_server_connection():
+            discovery = Discovery()
+            print("Minecraftサーバーの接続状態を確認しています...")
+            result = await discovery.check_server_active(timeout=15)
+            if result:
+                print("✅ Minecraftサーバーはアクティブです！")
+                # サーバーのバージョン情報表示
+                print(f"サーバーバージョン: {discovery.bot.version}")
+                print(f"プレイヤー数: {len(discovery.bot.players)}")
+            else:
+                print("❌ Minecraftサーバーに接続できませんでした")
+            return result
+        
+        asyncio.run(check_server_connection())
+    else:
+        # Skillsモードで実行
+        print("Skillsモードで起動します...")
+        asyncio.run(run_craft_example())
