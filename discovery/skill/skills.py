@@ -748,7 +748,7 @@ class Skills:
             'name': item_name,
             'count': count
         }
-        
+    
     async def equip(self, item_name):
         """
         指定されたアイテムを適切な装備スロットに装備します（道具や防具など）。
@@ -790,22 +790,22 @@ class Skills:
                 
             # アイテムタイプに基づいて装備スロットを決定
             if "leggings" in item_name:
-                await self.bot.equip(item, "legs")
+                self.bot.equip(item, "legs")
                 slot_type = "脚"
             elif "boots" in item_name:
-                await self.bot.equip(item, "feet")
+                self.bot.equip(item, "feet")
                 slot_type = "足"
             elif "helmet" in item_name:
-                await self.bot.equip(item, "head")
+                self.bot.equip(item, "head")
                 slot_type = "頭"
             elif "chestplate" in item_name or "elytra" in item_name:
-                await self.bot.equip(item, "torso")
+                self.bot.equip(item, "torso")
                 slot_type = "胴体"
             elif "shield" in item_name:
-                await self.bot.equip(item, "off-hand")
+                self.bot.equip(item, "off-hand")
                 slot_type = "オフハンド"
             else:
-                await self.bot.equip(item, "hand")
+                self.bot.equip(item, "hand")
                 slot_type = "メインハンド"
                 
             result["success"] = True
@@ -865,7 +865,7 @@ class Skills:
                 to_discard = item.count if num == -1 else min(num - discarded, item.count)
                 
                 # アイテムを捨てる
-                await self.bot.toss(item.type, None, to_discard)
+                self.bot.toss(item.type, None, to_discard)
                 discarded += to_discard
                 
                 # 指定した数だけ捨てたら終了
@@ -890,8 +890,8 @@ class Skills:
 
     async def put_in_chest(self, item_name, num=-1):
         """
-        指定されたアイテムを最も近いチェストに入れます。
-        
+        指定されたアイテムを最も近いチェストに入れます。スタック数が１のツールなどは１つしか入れられません。その場合は、複数回実行してください
+
         Args:
             item_name (str): チェストに入れるアイテムまたはブロックの名前
             num (int): チェストに入れるアイテムの数。デフォルトは-1で、すべてのアイテムを入れます。
@@ -944,13 +944,13 @@ class Skills:
             await self.move_to_position(chest.position.x, chest.position.y, chest.position.z, 2)
             
             # チェストを開く
-            chest_container = await self.bot.openContainer(chest)
+            chest_container = self.bot.openContainer(chest)
             
             # アイテムをチェストに入れる
-            await chest_container.deposit(item.type, None, to_put)
+            chest_container.deposit(item.type, None, to_put)
             
             # チェストを閉じる
-            await chest_container.close()
+            chest_container.close()
             
             result["success"] = True
             result["count"] = to_put
@@ -1004,7 +1004,7 @@ class Skills:
             await self.move_to_position(chest.position.x, chest.position.y, chest.position.z, 2)
             
             # チェストを開く
-            chest_container = await self.bot.openContainer(chest)
+            chest_container = self.bot.openContainer(chest)
             
             # チェスト内のアイテムを探す
             item = None
@@ -1015,7 +1015,7 @@ class Skills:
                     
             if not item:
                 result["message"] = f"チェスト内に{item_name}が見つかりませんでした。"
-                await chest_container.close()
+                chest_container.close()
                 self.bot.chat(result["message"])
                 return result
                 
@@ -1023,10 +1023,10 @@ class Skills:
             to_take = item.count if num == -1 else min(num, item.count)
             
             # アイテムをチェストから取り出す
-            await chest_container.withdraw(item.type, None, to_take)
+            chest_container.withdraw(item.type, None, to_take)
             
             # チェストを閉じる
-            await chest_container.close()
+            chest_container.close()
             
             result["success"] = True
             result["count"] = to_take
@@ -1076,19 +1076,20 @@ class Skills:
             await self.move_to_position(chest.position.x, chest.position.y, chest.position.z, 2)
             
             # チェストを開く
-            chest_container = await self.bot.openContainer(chest)
+            chest_container = self.bot.openContainer(chest)
             
             # チェスト内のアイテムを取得
             items = chest_container.containerItems()
             
             # アイテムをリストに変換
             item_list = []
-            if items and len(items) > 0:
+            if items:
                 for item in items:
-                    item_list.append({
-                        "name": item.name,
-                        "count": item.count
-                    })
+                    if item:  # Noneでないアイテムのみ追加
+                        item_list.append({
+                            "name": item.name,
+                            "count": item.count
+                        })
             
             # 結果を生成
             if not item_list:
@@ -1098,16 +1099,17 @@ class Skills:
                 # アイテムリストをテキストに変換
                 items_text = []
                 for item in item_list:
-                    items_text.append(f"{item['count']}個の{item['name']}")
+                    items_text.append(f"{item['name']} x {item['count']}")
                 
                 result["message"] = f"チェストの中身: {', '.join(items_text)}"
                 result["items"] = item_list
-                self.bot.chat("チェストには以下のアイテムが含まれています:")
+                print_data = "チェストには以下のアイテムが含まれています:\n"
                 for item in item_list:
-                    self.bot.chat(f"{item['count']}個の{item['name']}")
+                    print_data += f"{item['name']} x {item['count']}\n"
+                self.bot.chat(print_data)
             
             # チェストを閉じる
-            await chest_container.close()
+            chest_container.close()
             
             result["success"] = True
             return result
@@ -1119,7 +1121,8 @@ class Skills:
 
     async def consume(self, item_name=""):
         """
-        指定されたアイテムを食べる/飲みます。
+        指定されたアイテムを1つ食べる/飲みます。
+        満腹度が最大の場合は消費できません。
         
         Args:
             item_name (str): 食べる/飲むアイテムの名前。デフォルトは空文字列で、その場合は手に持っているアイテムを消費します。
@@ -1129,13 +1132,6 @@ class Skills:
                 - success (bool): アイテムを消費できた場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
                 - item (str, optional): 消費したアイテム名（成功時のみ）
-                
-        Example:
-            >>> result = await skills.consume("apple")
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1143,6 +1139,12 @@ class Skills:
         }
         
         try:
+            # 満腹度チェック
+            if hasattr(self.bot, 'food') and self.bot.food >= 20:
+                result["message"] = "満腹度が最大のため、これ以上食べ物を消費できません。"
+                self.bot.chat(result["message"])
+                return result
+
             item = None
             name = item_name
             
@@ -1155,15 +1157,15 @@ class Skills:
             
             # アイテムが見つからない場合
             if not item:
-                result["message"] = f"{name if name else '指定されたアイテム'}を消費できません。インベントリにありません。"
+                result["message"] = f"{name if name else '指定されたアイテム'}を消費できません。インベントリにアイテムがありません。"
                 self.bot.chat(result["message"])
                 return result
                 
             # アイテムを手に持つ
-            await self.bot.equip(item, 'hand')
+            self.bot.equip(item, 'hand')
             
             # アイテムを消費
-            await self.bot.consume()
+            self.bot.consume()
             
             result["success"] = True
             result["item"] = item.name
@@ -1924,7 +1926,7 @@ class Skills:
             goal = Goal.GoalNear(x, y, z, min_distance)
             
             # 移動実行
-            await self.bot.pathfinder.goto(goal)
+            self.bot.pathfinder.goto(goal)
             
             # 現在位置を取得して結果に設定
             current_pos = self.bot.entity.position
