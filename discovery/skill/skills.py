@@ -439,18 +439,11 @@ class Skills:
         # ブロックIDの検証
         try:
             block_id = None
-            valid_block = False
             
             # ブロック名からIDを取得
-            try:
-                block_id = self._get_item_id(block_type)
-                valid_block = True
-            except Exception:
-                # レジストリから直接確認
-                if hasattr(self.bot.registry, 'blocksByName') and block_type in self.bot.registry.blocksByName:
-                    valid_block = True
-                    
-            if not valid_block:
+            block_id = self._get_item_id(block_type)
+    
+            if block_id is None:
                 result["message"] = f"無効なブロックタイプです: {block_type}"
                 result["error"] = "invalid_block_type"
                 self.bot.chat(result["message"])
@@ -728,6 +721,7 @@ class Skills:
         """
         指定された名前とカウントでアイテムオブジェクトを作成します。
         クリエイティブモードでのアイテム追加に使用します。
+        注意:クリエイティブモードのみで動作します
         
         Args:
             item_name (str): アイテム名
@@ -2277,7 +2271,7 @@ class Skills:
             pass
             
         # アイテムが見つからない場合はエラー
-        raise ValueError(f"アイテム '{item_name}' が見つかりません")
+        return None
         
     async def clear_nearest_furnace(self):
         """
@@ -2962,14 +2956,7 @@ class Skills:
                 # 適切なツールを持っているか確認
                 item_id = None
                 if self.bot.heldItem:
-                    try:
-                        item_id = self.bot.heldItem.type
-                    except:
-                        try:
-                            item_name = self.bot.heldItem.name
-                            item_id = self._get_item_id(item_name)
-                        except:
-                            pass
+                    item_id = self.bot.heldItem.type
                             
                 # ブロックを採掘できるか確認
                 if hasattr(block, 'canHarvest') and not block.canHarvest(item_id):
