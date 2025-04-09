@@ -150,32 +150,81 @@ class Skills:
             traceback.print_exc()
             return None
     
-    def get_nearest_free_space(self, y_offset=1):
+    def get_nearest_free_space(self, size=1, distance=8, y_offset=0):
         """
-        ボットの周囲の空きスペースを見つけます。
+        指定されたサイズの空きスペース（上部が空気で下部が固体ブロック）を見つけます。
         
         Args:
-            y_offset (int): Y座標のオフセット
-            max_distance (int): 探索する最大距離
+            size (int): 探す空きスペースの（size × size）サイズ。デフォルトは1。
+            distance (int): 探索する最大距離。デフォルトは8。
+            y_offset (int): 見つかった空きスペースに適用するY座標オフセット。デフォルトは0。
             
         Returns:
-            Vec3: 空きスペースの座標
+            Vec3: 見つかった空きスペースの南西角の座標。見つからない場合はボットの足元の座標を返します。
         
         Example:
-            >>> get_nearest_free_space()
-            Vec3 { x: 100, y: 64, z: 100 }
+            >>> free_space = skills.get_nearest_free_space(2, 10)
+            >>> print(f"見つかった空きスペース: x={free_space.x}, y={free_space.y}, z={free_space.z}")
         """
-        position = self.bot.entity.position
-        Vec3 = require('vec3')
+        try:
+            Vec3 = require('vec3')
         
-        # 基本的にボットの足元にブロックを設置
-        result = Vec3(
-            int(position.x),
-            int(position.y) - 1 + y_offset,
-            int(position.z)
-        )
-        
-        return result
+            # 空気ブロックを検索
+            empty_pos = self.bot.findBlocks({
+                'matching': lambda block: block and block.name == 'air',
+                'maxDistance': distance,
+                'count': 1000
+            })
+            
+            # 各空気ブロックについて、指定されたサイズの空きスペースを確認
+            for pos in empty_pos:
+                empty = True
+                for x_offset in range(size):
+                    for z_offset in range(size):
+                        # 上部のブロックが空気であることを確認
+                        top = self.bot.blockAt(Vec3(
+                            pos.x + x_offset,
+                            pos.y,
+                            pos.z + z_offset
+                        ))
+                        
+                        # 下部のブロックが掘れる固体ブロックであることを確認
+                        bottom = self.bot.blockAt(Vec3(
+                            pos.x + x_offset,
+                            pos.y - 1,
+                            pos.z + z_offset
+                        ))
+                        
+                        # 条件チェック（Proxyオブジェクトにlen()が使えないため修正）
+                        if (not top or top.name != 'air' or 
+                            not bottom or not hasattr(bottom, 'drops') or not bottom.drops or not bottom.diggable):
+                            empty = False
+                            break
+                    
+                    if not empty:
+                        break
+                
+                # 適切なスペースが見つかった場合は、そのポジションを返す
+                if empty:
+                    result = Vec3(pos.x, pos.y + y_offset, pos.z)
+                return result
+            
+            # 適切なスペースが見つからなかった場合は、デフォルトとしてボットの足元の座標を返す
+            position = self.bot.entity.position
+            return Vec3(int(position.x), int(position.y) + y_offset, int(position.z))
+            
+        except Exception as e:
+            # エラーが発生した場合はデフォルト値を返す
+            self.bot.chat(f"空きスペースの検索中にエラーが発生しました: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # デバッグ情報を出力
+            position = self.bot.entity.position
+            print(f"Debug: {position}")
+            
+            # デフォルト値としてボットの足元の座標を返す
+            return Vec3(int(position.x), int(position.y) + y_offset, int(position.z))
         
     async def craft_recipe(self, item_name, num=1):
         """
@@ -235,14 +284,17 @@ class Skills:
             placed_table = False
             
             # レシピが存在するか確認
-            recipes = self.bot.recipesFor(item_name, None, 1, None)
+            item_id = self._get_item_id(item_name)
+            
+            recipes = self.bot.recipesFor(item_id, None, num, None)
             crafting_table = None
             crafting_table_range = 32
-            
+
             # クラフティングテーブルが必要な場合
-            if not recipes or len(recipes) == 0:
-                recipes = self.bot.recipesFor(item_name, None, 1, True)
-                if not recipes or len(recipes) == 0:
+            if not recipes or not any(True for _ in recipes):  # Proxyオブジェクトの空チェック
+                print("作業台を使用するレシピを検索します")
+                recipes = self.bot.recipesFor(item_id, None, num, True)
+                if not recipes:
                     error_msg = f"{item_name}のレシピが見つかりません"
                     self.bot.chat(error_msg)
                     result["message"] = error_msg
@@ -254,26 +306,32 @@ class Skills:
                 if not crafting_table:
                     # インベントリにクラフティングテーブルがあるか確認
                     if self.get_inventory_counts().get('crafting_table', 0) > 0:
-                        pos = self.get_nearest_free_space(1)
+                        # クラフティングテーブルを設置
+                        pos = self.get_nearest_free_space(1,6)
                         await self.place_block('crafting_table', pos.x, pos.y, pos.z)
                         crafting_table = self.get_nearest_block('crafting_table', crafting_table_range)
                         if crafting_table:
-                            recipes = self.bot.recipesFor(item_name, None, 1, crafting_table)
+                            recipes = self.bot.recipesFor(item_id, None, 1, crafting_table)
                             placed_table = True
+                            print(f"作業台設置後レシピ:{recipes}")
                     else:
-                        error_msg = f"{item_name}の作成にはクラフティングテーブルが必要ですが、所持していません"
+                        error_msg = f"{item_name}の作成には作業台が必要ですが、周辺32ブロック以内に作業台が見つからず、インベントリにも作業台がないため作成できません"
                         self.bot.chat(error_msg)
                         result["message"] = error_msg
                         result["error"] = "crafting_table_required"
                         return result
                 else:
-                    recipes = self.bot.recipesFor(item_name, None, 1, crafting_table)
+                    # 近くに作業台がある場合は、レシピを取得
+                    recipes = self.bot.recipesFor(item_id, None, 1, crafting_table)
             
-            if not recipes or len(recipes) == 0:
+            if not recipes or not any(True for _ in recipes):
                 # 材料不足の場合、必要な材料を調べる
                 required_materials = []
                 try:
-                    # (ここでは簡易的に実装。実際には必要な材料を取得するロジックが必要)
+                    # レシピから必要な材料を取得
+                    recipe_data = self.mcdata.getItemCraftingRecipes(item_name)[0][0]
+                    required_materials = [f"{key}: {value}" for key, value in recipe_data.items()]
+                    print(f"必要な材料:{required_materials}")
                     required_materials.append("必要な材料が不足しています")
                 except:
                     pass
@@ -302,20 +360,23 @@ class Skills:
                 
             recipe = recipes[0]
             try:
+
+                # レシピの有効性チェック
+                if not recipe or not hasattr(recipe, 'result'):
+                    error_msg = f"{item_name}の有効なレシピが見つかりません"
+                    self.bot.chat(error_msg)
+                    result["message"] = error_msg
+                    result["error"] = "invalid_recipe"
+                    return result
+
                 # クラフト実行
-                await self.bot.craft(recipe, num, crafting_table)
+                self.bot.craft(recipe, num, crafting_table)
                 success_msg = f"{item_name}を{num}個作成しました"
                 self.bot.chat(success_msg)
                 
                 # 設置したクラフティングテーブルを回収
                 if placed_table:
                     await self.collect_block('crafting_table', 1)
-                    
-                # 防具を装備
-                try:
-                    self.bot.armor_manager.equip_all()
-                except Exception as e:
-                    print(f"防具装備エラー: {e}")
                 
                 result["success"] = True
                 result["message"] = success_msg
@@ -610,7 +671,7 @@ class Skills:
                         goal = self.pathfinder.goals.GoalNear(target_block.position.x, target_block.position.y, target_block.position.z, 2)
                         inverted_goal = self.pathfinder.goals.GoalInvert(goal)
                         self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
-                        await self.bot.pathfinder.goto(inverted_goal)
+                        self.bot.pathfinder.goto(inverted_goal)
                 except Exception as e:
                     result["message"] = f"設置位置から離れる際にエラーが発生しました: {str(e)}"
                     result["error"] = "movement_error"
@@ -623,7 +684,7 @@ class Skills:
                     if hasattr(self.pathfinder.goals, 'GoalNear'):
                         movements = self.pathfinder.Movements(self.bot)
                         self.bot.pathfinder.setMovements(movements)
-                        await self.bot.pathfinder.goto(self.pathfinder.goals.GoalNear(
+                        self.bot.pathfinder.goto(self.pathfinder.goals.GoalNear(
                             target_block.position.x, 
                             target_block.position.y, 
                             target_block.position.z, 
@@ -636,14 +697,14 @@ class Skills:
                     return result
                     
             # ブロックを手に持つ
-            await self.bot.equip(block_item, 'hand')
+            self.bot.equip(block_item, 'hand')
             
             # 設置対象のブロックを見る
-            await self.bot.lookAt(build_off_block.position)
+            self.bot.lookAt(build_off_block.position)
             
             # ブロックを設置
             try:
-                await self.bot.placeBlock(build_off_block, face_vec)
+                self.bot.placeBlock(build_off_block, face_vec)
                 result["message"] = f"{block_type}を座標({target_dest})に設置しました"
                 result["success"] = True
                 self.bot.chat(result["message"])
