@@ -292,7 +292,6 @@ class Skills:
 
             # クラフティングテーブルが必要な場合
             if not recipes or not any(True for _ in recipes):  # Proxyオブジェクトの空チェック
-                print("作業台を使用するレシピを検索します")
                 recipes = self.bot.recipesFor(item_id, None, num, True)
                 if not recipes:
                     error_msg = f"{item_name}のレシピが見つかりません"
@@ -327,14 +326,13 @@ class Skills:
             if not recipes or not any(True for _ in recipes):
                 # 材料不足の場合、必要な材料を調べる
                 required_materials = []
-                try:
-                    # レシピから必要な材料を取得
-                    recipe_data = self.mcdata.getItemCraftingRecipes(item_name)[0][0]
-                    required_materials = [f"{key}: {value}" for key, value in recipe_data.items()]
-                    print(f"必要な材料:{required_materials}")
-                    required_materials.append("必要な材料が不足しています")
-                except:
-                    pass
+                # レシピから必要な材料を取得
+                recipe_data = self.get_item_crafting_recipes(item_name)
+                if recipe_data and recipe_data[0]:
+                    recipe_dict = recipe_data[0][0]
+                    required_materials = [f"{key}: {value}" for key, value in recipe_dict.items()]
+                else:
+                    required_materials.append("レシピが見つかりません")
                     
                 error_msg = f"{item_name}を作成するための材料が不足しています"
                 if required_materials:
@@ -1683,9 +1681,9 @@ class Skills:
         指定されたタイプのブロックを収集します。
         
         Args:
-            block_type (str): 収集するブロックタイプ
-            num (int): 収集する数量
-            exclude (list): 除外する座標のリスト
+            block_type (str): 収集するブロックのタイプ
+            num (int): 収集するブロックの数。デフォルトは1
+            exclude (list, optional): 除外するブロックの位置のリスト
             
         Returns:
             dict: 結果を含む辞書
@@ -1694,13 +1692,6 @@ class Skills:
                 - collected (int): 収集したブロックの数
                 - block_type (str): 収集しようとしたブロックタイプ
                 - error (str, optional): エラーがある場合のエラーコード
-                
-        Example:
-            >>> result = await skills.collect_block("oak_log", 5)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1727,136 +1718,74 @@ class Skills:
         if block_type.endswith('ore'):
             blocktypes.append(f"deepslate_{block_type}")
             
-        # 土ブロックの対応
+        # dirtの特殊処理
         if block_type == 'dirt':
             blocktypes.append('grass_block')
             
-        # ブロックを探して収集
         collected = 0
-        Vec3 = require('vec3')
         
         for i in range(num):
-            # blocktypeリストに含まれるブロックを探す
             blocks = []
             for btype in blocktypes:
-                found_blocks = self.find_blocks_by_name(btype, 64, 10)
-                if found_blocks:
-                    blocks.extend(found_blocks)
-            
-            # 除外リストの処理
+                found_block = self.get_nearest_block(btype, 64)
+                if found_block:
+                    blocks.append(found_block)
+                    
+            # 除外位置のフィルタリング
             if exclude and blocks:
-                for position in exclude:
-                    blocks = [
-                        block for block in blocks 
-                        if block.position.x != position.x 
-                        or block.position.y != position.y 
-                        or block.position.z != position.z
-                    ]
-            
-            # 安全性チェック
-            if hasattr(self.pathfinder, 'Movements'):
-                movements = self.pathfinder.Movements(self.bot)
-                blocks = [
-                    block for block in blocks 
-                    if hasattr(movements, 'safeToBreak') and movements.safeToBreak(block)
-                ]
+                blocks = [block for block in blocks if not any(
+                    block.position.x == pos.x and 
+                    block.position.y == pos.y and 
+                    block.position.z == pos.z 
+                    for pos in exclude
+                )]
+                
+            # 安全に採掘可能なブロックのフィルタリング
+            movements = self.bot.pathfinder.movements
+            movements.dontMineUnderFallingBlock = False
+            blocks = [block for block in blocks if movements.safeToBreak(block)]
             
             if not blocks:
                 if collected == 0:
-                    message = f"近くに{block_type}が見つかりません"
-                    self.bot.chat(message)
-                    result["message"] = message
-                    result["error"] = "no_blocks_found"
-                    return result
+                    result["message"] = f"近くに{block_type}が見つかりません。"
                 else:
-                    message = f"これ以上{block_type}が見つかりません"
-                    self.bot.chat(message)
-                    break
+                    result["message"] = f"これ以上{block_type}が見つかりません。"
+                result["error"] = "no_blocks_found"
+                break
                 
-            # 最も近いブロックを選択
-            blocks.sort(key=lambda b: b.position.distanceTo(self.bot.entity.position))
             block = blocks[0]
-                    
-            # 適切なツールを選択
-            try:
-                await self.bot.tool.equipForBlock(block)
-                
-                # 選択されたツールがブロックを採掘できるか確認
-                item_id = None
-                if self.bot.heldItem:
-                    try:
-                        # 直接typeプロパティを使用
-                        item_id = self.bot.heldItem.type
-                    except:
-                        # 手に持っているアイテム名からIDを取得
-                        try:
-                            item_name = self.bot.heldItem.name
-                            item_id = self._get_item_id(item_name)
-                        except:
-                            pass
-                
-                if hasattr(block, 'canHarvest') and not block.canHarvest(item_id):
-                    message = f"{block_type}を採掘するための適切なツールを持っていません"
-                    self.bot.chat(message)
-                    result["message"] = message
-                    result["error"] = "no_suitable_tool"
-                    return result
-            except Exception as e:
-                print(f"ツール装備中にエラーが発生しました: {e}")
-                message = f"ツール装備中にエラーが発生しました: {str(e)}"
-                self.bot.chat(message)
-                result["message"] = message
-                result["error"] = "tool_equip_error"
+            
+            # 適切なツールを装備
+            self.bot.tool.equipForBlock(block)
+            if self.bot.heldItem:
+                held_item_id = self.bot.heldItem.type
+            else:
+                held_item_id = None
+            if not block.canHarvest(held_item_id):
+                result["message"] = f"{block_type}を採掘するための適切なツールがありません。"
+                result["error"] = "no_suitable_tool"
                 return result
                 
             try:
-                # ブロックを採掘
-                if hasattr(self.bot, 'collectBlock'):
-                    try:
-                        await self.bot.collectBlock.collect(block)
-                        collected += 1
-                        
-                        # 自動トーチ設置
-                        await self.auto_light()
-                    except Exception as e:
-                        if hasattr(e, 'name') and e.name == 'NoChests':
-                            message = f"{block_type}の収集に失敗: インベントリがいっぱいで置く場所がありません"
-                            self.bot.chat(message)
-                            result["message"] = message
-                            result["error"] = "inventory_full"
-                            result["collected"] = collected
-                            if collected > 0:
-                                result["success"] = True
-                            return result
-                        else:
-                            message = f"{block_type}の収集に失敗: {str(e)}"
-                            self.bot.chat(message)
-                            continue
-                else:
-                    # collectBlockがない場合は通常のdig関数を使用
-                    await self.bot.dig(block)
-                    collected += 1
-                    self.bot.chat(f"{block_type}を収集しました")
-                    
-                    # 自動トーチ設置
-                    await self.auto_light()
+                self.bot.collectBlock.collect(block)
+                collected += 1
+                await self.auto_light()
             except Exception as e:
-                message = f"ブロック採掘中にエラーが発生しました: {str(e)}"
-                self.bot.chat(message)
-                print(e)
-                import traceback
-                traceback.print_exc()
-                continue
-        
-        message = f"{collected}個の{block_type}を収集しました"
-        self.bot.chat(message)
-        result["message"] = message
+                if str(e) == 'NoChests':
+                    result["message"] = f"{block_type}の収集に失敗: インベントリが一杯で、保管場所がありません。"
+                    result["error"] = "inventory_full"
+                    break
+                else:
+                    result["message"] = f"{block_type}の収集に失敗: {str(e)}"
+                    result["error"] = "collection_failed"
+                    continue
+                    
         result["collected"] = collected
         result["success"] = collected > 0
+        if not result["message"]:
+            result["message"] = f"{block_type}を{collected}個収集しました。"
         
-        if not result["success"]:
-            result["error"] = "collection_failed"
-            
+        self.bot.chat(result["message"])
         return result
         
     def should_place_torch(self):
@@ -1929,57 +1858,6 @@ class Skills:
         except Exception as e:
             print(f"トーチ設置エラー: {e}")
             return False
-        
-    def find_blocks_by_name(self, block_type, max_distance=64, count=1):
-        """
-        別の方法でブロックを探します。これはbot.findBlocksを使用します。
-        
-        Args:
-            block_type (str): 探すブロックタイプ
-            max_distance (int): 探索する最大距離
-            count (int): 見つける最大数
-            
-        Returns:
-            list: 見つかったブロックのリスト
-        """
-        try:
-            # 直接registry.blocksByNameを使ってIDを取得してみる
-            matching = None
-            try:
-                if hasattr(self.bot.registry, 'blocksByName') and block_type in self.bot.registry.blocksByName:
-                    matching = self.bot.registry.blocksByName[block_type].id
-                    print(f"ブロックID: {matching} for {block_type}")
-                else:
-                    # レジストリからIDが取得できない場合、関数でマッチング
-                    matching = lambda block: block and block.name == block_type
-            except Exception as e:
-                print(f"ブロックID取得エラー: {e}")
-                matching = block_type  # フォールバック
-            
-            # findBlocksメソッドを使用
-            blocks = self.bot.findBlocks({
-                'matching': matching,
-                'maxDistance': max_distance,
-                'count': count
-            })
-            
-            print(f"findBlocksの結果: {blocks}, 数: {len(blocks) if blocks else 0}")
-            
-            # 結果をリストとして返す
-            if blocks and len(blocks) > 0:
-                result = []
-                for pos in blocks:
-                    block = self.bot.blockAt(pos)
-                    if block:
-                        result.append(block)
-                return result
-            return []
-            
-        except Exception as e:
-            print(f"ブロック検索中にエラーが発生しました: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return []
             
     def get_all_registry_blocks(self):
         """
@@ -3389,3 +3267,41 @@ class Skills:
             import traceback
             traceback.print_exc()
             return result
+
+    def get_item_crafting_recipes(self, item_name):
+        """
+        アイテムのクラフトレシピを取得します
+        
+        Args:
+            item_name (str): アイテム名
+            
+        Returns:
+            list: レシピのリスト。各レシピは[材料辞書, 結果辞書]の形式
+        """
+        item_id = self.mcdata.itemsByName[item_name].id
+        if item_id not in self.mcdata.recipes:
+            return None
+            
+        recipes = []
+        for r in self.mcdata.recipes[item_id]:
+            recipe = {}
+            ingredients = []
+            if hasattr(r, 'ingredients') and r.ingredients:
+                ingredients = r.ingredients
+            elif hasattr(r, 'inShape') and r.inShape:
+                ingredients = [item for sublist in r.inShape for item in sublist if item]
+                
+            for ingredient in ingredients:
+                if not ingredient:
+                    continue
+                ingredient_name = self.mcdata.items[ingredient].name
+                if ingredient_name not in recipe:
+                    recipe[ingredient_name] = 0
+                recipe[ingredient_name] += 1
+                
+            recipes.append([
+                recipe,
+                {"craftedCount": r.result.count}
+            ])
+            
+        return recipes
