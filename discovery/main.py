@@ -156,7 +156,7 @@ async def run_craft_example():
         try:
             print(input("Enter: "))
             #print(await skills.craft_recipe("wooden_axe", 1))
-            print(await skills.collect_block("oak_log", 1))
+            print(await skills.place_block("stone", -2, -60, 4))
             #position = skills.get_nearest_free_space()
             #print(await skills.place_block("crafting_table", position.x, position.y, position.z))
         except Exception as e:
