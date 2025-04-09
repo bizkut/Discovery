@@ -23,9 +23,13 @@ class Discovery:
     def load_plugins(self):
         # pathfinder
         self.pathfinder = require("mineflayer-pathfinder")
+        self.collectblock = require("mineflayer-collectblock").plugin
         self.web_inventory = require("mineflayer-web-inventory")
+        self.mineflayer_tool = require("mineflayer-tool").plugin
         self.bot.loadPlugin(self.pathfinder.pathfinder)
+        self.bot.loadPlugin(self.collectblock)
         self.bot.loadPlugin(self.web_inventory)
+        self.bot.loadPlugin(self.mineflayer_tool)
         self.movements = self.pathfinder.Movements(self.bot, self.mcdata)
         
         # Web Inventoryを有効化
@@ -45,8 +49,8 @@ class Discovery:
         
         # スポーン時の処理
         def handle_spawn(*args):
-            print("ボットがサーバーにスポーンしました")
-            self.bot.chat("ボットがサーバーにスポーンしました")
+            print("Botがスポーンしました")
+            self.bot.chat("Botがスポーンしました")
             self.is_connected = True
         
         # エラー時の処理
@@ -151,7 +155,8 @@ async def run_craft_example():
     while True:
         try:
             print(input("Enter: "))
-            print(await skills.craft_recipe("golden_axe", 1))
+            #print(await skills.craft_recipe("wooden_axe", 1))
+            print(await skills.collect_block("oak_log", 1))
             #position = skills.get_nearest_free_space()
             #print(await skills.place_block("crafting_table", position.x, position.y, position.z))
         except Exception as e:
