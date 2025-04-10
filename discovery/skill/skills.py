@@ -1443,7 +1443,7 @@ class Skills:
                 if hasattr(self.bot.modes, 'isOn') and self.bot.modes.isOn('cheat'):
                     try:
                         move = self.pathfinder.Movements(self.bot)
-                        path = await self.bot.pathfinder.getPathTo(move, inverted_goal, 10000)
+                        path = self.bot.pathfinder.getPathTo(move, inverted_goal, 10000)
                         
                         if path and path.path and len(path.path) > 0:
                             last_move = path.path[len(path.path) - 1]
@@ -1464,7 +1464,7 @@ class Skills:
                         # 通常の移動を試みる
                 
                 # パスファインダーを使って移動
-                await self.bot.pathfinder.goto(inverted_goal)
+                self.bot.pathfinder.goto(inverted_goal)
                 
                 # 新しい位置を取得
                 new_pos = self.bot.entity.position
