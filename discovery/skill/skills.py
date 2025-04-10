@@ -1686,73 +1686,64 @@ class Skills:
         
     def should_place_torch(self):
         """
-        トーチを設置すべきかどうかを判断します。
-        暗い場所にいる場合やブロックの明るさが一定以下の場合にトーチを設置します。
+        松明を設置すべきかどうかを周辺にある松明の有無およびインベントリに松明があるかどうかの基づいて判断します。
         
         Returns:
-            bool: トーチを設置すべき場合はTrue
+            bool: 松明を設置すべき場合はTrue、そうでない場合はFalse
         """
-        try:
-            # インベントリにトーチがあるか確認
-            inventory = self.get_inventory_counts()
-            if inventory.get('torch', 0) <= 0:
-                return False
-                
-            # 現在位置の明るさを確認（可能であれば）
-            current_pos = self.bot.entity.position
-            pos_block = self.bot.blockAt(current_pos)
+        pos = self.bot.entity.position
+        
+        # 近くの松明を探す
+        nearest_torch = self.get_nearest_block('torch', 6)
+        if not nearest_torch:
+            nearest_torch = self.get_nearest_block('wall_torch', 6)
             
-            # 明るさの閾値（元のJavaScriptコード参考）
-            # 地下か夜間で、明るさが低い場合にトーチを設置
-            is_underground = current_pos.y < 60
-            is_dark = False
+        # 近くに松明がない場合
+        if not nearest_torch:
+            # 現在位置のブロックを確認
+            block = self.bot.blockAt(pos)
             
-            # 明るさの情報が取得できる場合
-            if hasattr(pos_block, 'light') and pos_block.light is not None:
-                is_dark = pos_block.light < 8
-            elif hasattr(pos_block, 'skyLight') and pos_block.skyLight is not None:
-                is_dark = pos_block.skyLight < 8
-                
-            # 30分のトーチ間隔を保つ（位置ベース）
-            last_torch_pos = getattr(self, '_last_torch_pos', None)
-            if last_torch_pos:
-                torch_distance = current_pos.distanceTo(last_torch_pos)
-                if torch_distance < 8:  # 8ブロック以内にトーチがある
-                    return False
+            # インベントリに松明があるかチェック
+            has_torch = False
+            if hasattr(self.bot, 'inventory') and hasattr(self.bot.inventory, 'items'):
+                for item in self.bot.inventory.items():
+                    if item and hasattr(item, 'name') and item.name == 'torch':
+                        has_torch = True
+                        break
                     
-            return is_underground and is_dark
-        except Exception as e:
-            print(f"トーチ設置判定エラー: {e}")
-            return False
+            # 現在位置が空気で、松明を持っている場合に設置可能
+            return has_torch and block and hasattr(block, 'name') and block.name == 'air'
             
+        return False
+        
     async def auto_light(self):
         """
-        必要に応じて現在位置にトーチを設置します。
+        周りに松明がない場合、インベントリに松明がある場合、現在位置が空気である場合に松明を設置します。
         
         Returns:
-            bool: トーチを設置した場合はTrue、そうでない場合はFalse
+            bool: 松明を設置した場合はTrue、そうでない場合はFalse
         """
         try:
             if self.should_place_torch():
                 pos = self.bot.entity.position
                 Vec3 = require('vec3')
-                # 足元にトーチを設置
+                # 足元に松明を設置
                 floor_pos = Vec3(
                     round(pos.x),
                     round(pos.y) - 1,  # 足元
                     round(pos.z)
                 )
                 
-                # トーチを設置
-                result = await self.place_block('torch', floor_pos.x, floor_pos.y + 1, floor_pos.z, 'bottom', True)
+                # 松明を設置
+                result = await self.place_block('torch', floor_pos.x, floor_pos.y + 1, floor_pos.z, 'bottom')
                 
                 if result:
-                    # 最後にトーチを設置した位置を記録
+                    # 最後に松明を設置した位置を記録
                     self._last_torch_pos = pos.clone()
                     return True
             return False
         except Exception as e:
-            print(f"トーチ設置エラー: {e}")
+            print(f"松明設置エラー: {e}")
             return False
             
     def get_all_registry_blocks(self):
@@ -1851,7 +1842,7 @@ class Skills:
         
     async def smelt_item(self, item_name, num=1):
         """
-        かまどにアイテムを入れて精錬します。燃料として石炭を使用します。
+        32ブロック以内にある「かまど」または、インベントリに「かまど」がある場合、「かまど」にアイテムを入れて精錬します。燃料として石炭、木炭、木材を使用します。
         精錬が完了するまで待機し、完了したアイテムを回収します。
         
         Args:
