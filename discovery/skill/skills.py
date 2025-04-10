@@ -1229,9 +1229,6 @@ class Skills:
                 "z": position.z
             }
             
-            # ブロックが見つかったことを通知
-            self.bot.chat(f"{block_type}が座標({position.x}, {position.y}, {position.z})で見つかりました。")
-            
             # ブロックまで移動
             move_result = await self.move_to_position(position.x, position.y, position.z, min_distance)
             if not move_result["success"]:
@@ -1240,7 +1237,7 @@ class Skills:
                 return result
                 
             result["success"] = True
-            result["message"] = f"{block_type}に到達しました。"
+            result["message"] = f"{block_type}(X:{position.x}, Y:{position.y}, Z:{position.z})に到達しました。"
             self.bot.chat(result["message"])
             return result
             
@@ -1257,7 +1254,7 @@ class Skills:
         
         Args:
             entity_type (str): 移動先のエンティティタイプ（例: "zombie", "sheep", "villager"など）
-            min_distance (int): エンティティから保つ距離。デフォルトは2
+            min_distance (int): 移動後、エンティティと保つ距離。デフォルトは2
             range (int): エンティティを探す最大範囲。デフォルトは64
             
         Returns:
@@ -1938,7 +1935,6 @@ class Skills:
             
             result["message"] = f"{x}, {y}, {z}に到着しました"
             result["success"] = True
-            self.bot.chat(result["message"])
             return result
             
         except Exception as e:
@@ -2786,32 +2782,29 @@ class Skills:
         
     def _get_nearby_entities(self, max_distance=24):
         """
-        周囲のエンティティを取得します。
+        指定した範囲内のすべてのエンティティを取得します。
         
         Args:
-            max_distance (int): 検索する最大距離
+            max_distance (int): 検索する最大距離。デフォルトは24
             
         Returns:
-            list: エンティティのリスト
+            list: 範囲内のエンティティのリスト
         """
         entities = []
         
-        try:
-            # 標準的な方法
-            if hasattr(self.bot, 'entities'):
-                for entity_id, entity in self.bot.entities.items():
-                    if (entity.type == 'mob' or entity.type == 'animal') and self.bot.entity.position.distanceTo(entity.position) <= max_distance:
-                        entities.append(entity)
-        except:
-            # 代替方法
-            try:
-                # nearbyEntitiesが利用可能な場合
-                for entity in self.bot.nearbyEntities:
-                    if self.bot.entity.position.distanceTo(entity.position) <= max_distance:
-                        entities.append(entity)
-            except:
-                pass
-                
+        # JavaScriptのentitiesプロパティにアクセス
+        bot_entities = getattr(self.bot, 'entities', None)
+        if bot_entities:
+            # JavaScriptオブジェクトの各プロパティを反復処理
+            for entity_id in bot_entities:
+                entity = bot_entities[entity_id]
+                # エンティティが有効で、プレイヤーとの距離が範囲内の場合のみ追加
+                if (entity and 
+                    hasattr(entity, 'position') and 
+                    hasattr(self.bot.entity, 'position') and
+                    self.bot.entity.position.distanceTo(entity.position) <= max_distance):
+                    entities.append(entity)
+                    
         return entities
         
     def _is_entity_nearby(self, entity, max_distance=24):
