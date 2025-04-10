@@ -1490,86 +1490,6 @@ class Skills:
             traceback.print_exc()
             return result
 
-    async def move_away_from_entity(self, entity, distance=16):
-        """
-        指定されたエンティティから離れます。
-        
-        Args:
-            entity: 離れるべきエンティティ
-            distance (int): エンティティから離れる距離。デフォルトは16
-            
-        Returns:
-            dict: 結果を含む辞書
-                - success (bool): 移動に成功した場合はTrue、失敗した場合はFalse
-                - message (str): 結果メッセージ
-                - entity_name (str): エンティティの名前
-                - start_position (dict): 開始位置 {x, y, z}
-                - end_position (dict, optional): 移動後の位置 {x, y, z}（成功時のみ）
-                
-        Example:
-            >>> entity = bot._get_nearby_entity_of_type("zombie", 24)
-            >>> if entity:
-            >>>     result = await skills.move_away_from_entity(entity)
-            >>>     if result["success"]:
-            >>>         print(f"成功: {result['message']}")
-            >>>     else:
-            >>>         print(f"失敗: {result['message']}")
-        """
-        result = {
-            "success": False,
-            "message": "",
-            "entity_name": entity.name if hasattr(entity, 'name') else "不明なエンティティ",
-            "start_position": {
-                "x": self.bot.entity.position.x,
-                "y": self.bot.entity.position.y,
-                "z": self.bot.entity.position.z
-            }
-        }
-        
-        try:
-            # エンティティの名前を取得
-            entity_name = entity.name if hasattr(entity, 'name') else "不明なエンティティ"
-            
-            # GoalFollowとGoalInvertを使用してエンティティから離れるゴールを設定
-            if hasattr(self.pathfinder.goals, 'GoalFollow') and hasattr(self.pathfinder.goals, 'GoalInvert'):
-                # エンティティを追跡するゴールを設定
-                goal = self.pathfinder.goals.GoalFollow(entity, distance)
-                # ゴールを反転して、エンティティから離れるようにする
-                inverted_goal = self.pathfinder.goals.GoalInvert(goal)
-                
-                # パスファインダーの設定
-                self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
-                
-                # エンティティから離れる方向に移動
-                await self.bot.pathfinder.goto(inverted_goal)
-                
-                # 新しい位置を取得
-                new_pos = self.bot.entity.position
-                result["end_position"] = {
-                    "x": new_pos.x,
-                    "y": new_pos.y,
-                    "z": new_pos.z
-                }
-                
-                # エンティティとの現在の距離を計算
-                current_distance = self.bot.entity.position.distanceTo(entity.position)
-                
-                result["success"] = True
-                result["message"] = f"{entity_name}から{distance}ブロック離れるように移動しました。現在の距離: {current_distance:.1f}ブロック"
-                self.bot.chat(result["message"])
-                return result
-            else:
-                result["message"] = "パスファインダーのゴール機能が利用できません。"
-                self.bot.chat(result["message"])
-                return result
-                
-        except Exception as e:
-            result["message"] = f"{result['entity_name']}から離れる移動中に予期せぬエラーが発生しました: {str(e)}"
-            self.bot.chat(result["message"])
-            import traceback
-            traceback.print_exc()
-            return result
-
     async def avoid_enemies(self, distance=16):
         """
         周囲の敵対的なモブから指定した距離だけ離れます。
@@ -1604,51 +1524,39 @@ class Skills:
         }
         
         try:
-            # 自己防衛モードを一時停止（ダメージによる割り込みを防ぐ）
-            if hasattr(self.bot.modes, 'pause'):
-                self.bot.modes.pause('self_preservation')
-            
-            # 敵対的なモブを見つける
+            # 最初の敵を探す
             enemy = self._get_nearest_hostile_entity(distance)
             enemies_avoided = 0
             
             while enemy:
                 enemies_avoided += 1
+                # 敵から少し離れるためのゴールを設定
+                follow_goal = self.pathfinder.goals.GoalFollow(enemy, distance + 1)
+                inverted_goal = self.pathfinder.goals.GoalInvert(follow_goal)
+                movements = self.pathfinder.Movements(self.bot)
+                self.bot.pathfinder.setMovements(movements)
+                self.bot.pathfinder.setGoal(inverted_goal, True)
                 
-                # GoalFollowとGoalInvertを使用してエンティティから離れるゴールを設定
-                if hasattr(self.pathfinder.goals, 'GoalFollow') and hasattr(self.pathfinder.goals, 'GoalInvert'):
-                    # エンティティを追跡するゴールを設定（少し余分に離れる）
-                    follow = self.pathfinder.goals.GoalFollow(enemy, distance + 1)
-                    # ゴールを反転して、エンティティから離れるようにする
-                    inverted_goal = self.pathfinder.goals.GoalInvert(follow)
+                # 少し待機
+                await asyncio.sleep(0.5)
+                
+                # 再度敵を探す
+                enemy = self._get_nearest_hostile_entity(distance)
+                
+                # 中断コードが設定されている場合、ループを抜ける
+                if self.bot.interrupt_code:
+                    break
                     
-                    # パスファインダーの設定
-                    self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
-                    self.bot.pathfinder.setGoal(inverted_goal, True)
-                    
-                    # 少し待機して移動を続行
-                    await asyncio.sleep(0.5)
-                    
-                    # 再度最も近い敵対的なモブを確認
-                    enemy = self._get_nearest_hostile_entity(distance)
-                    
-                    # 中断コードがある場合は停止
-                    if hasattr(self.bot, 'interrupt_code') and self.bot.interrupt_code:
-                        break
-                    
-                    # エンティティが近すぎる場合は攻撃（3ブロック以内）
-                    if enemy and self.bot.entity.position.distanceTo(enemy.position) < 3:
-                        attack_result = await self.attack_entity(enemy, kill=False)
-                        # 攻撃に失敗した場合でも続行
-                else:
-                    result["message"] = "パスファインダーのゴール機能が利用できません。"
-                    self.bot.chat(result["message"])
-                    return result
+                # 敵が近すぎる場合は攻撃
+                if enemy and self.bot.entity.position.distanceTo(enemy.position) < 3:
+                    await self.attack_entity(enemy, kill=False)
             
             # パスファインダーを停止
             self.bot.pathfinder.stop()
             
             # 結果を設定
+            result["success"] = True
+            result["message"] = f"敵から{distance}ブロック離れました。"
             result["enemies_avoided"] = enemies_avoided
             result["end_position"] = {
                 "x": self.bot.entity.position.x,
@@ -1656,18 +1564,10 @@ class Skills:
                 "z": self.bot.entity.position.z
             }
             
-            if enemies_avoided > 0:
-                result["success"] = True
-                result["message"] = f"{enemies_avoided}体の敵対的モブから{distance}ブロック離れました。"
-            else:
-                result["message"] = f"{distance}ブロック以内に敵対的モブが見つかりませんでした。"
-                
-            self.bot.chat(result["message"])
             return result
-                
+            
         except Exception as e:
-            result["message"] = f"敵対的モブからの回避中に予期せぬエラーが発生しました: {str(e)}"
-            self.bot.chat(result["message"])
+            result["message"] = f"敵から離れる際にエラーが発生しました: {str(e)}"
             import traceback
             traceback.print_exc()
             return result
@@ -2756,59 +2656,67 @@ class Skills:
         
     def _get_nearest_hostile_entity(self, max_distance=24):
         """
-        最も近い敵対的なエンティティを取得します。
-        
-        Args:
-            max_distance (int): 検索する最大距離
-            
-        Returns:
-            Entity: 最も近い敵対的なエンティティ、見つからない場合はNone
-        """
-        try:
-            entities = self._get_nearby_entities(max_distance)
-            hostile_entities = []
-            
-            for entity in entities:
-                if self._is_hostile(entity):
-                    hostile_entities.append(entity)
-                    
-            if hostile_entities:
-                # プレイヤーからの距離でソート
-                hostile_entities.sort(
-                    key=lambda e: self.bot.entity.position.distanceTo(e.position)
-                )
-                return hostile_entities[0]
-        except Exception as e:
-            print(f"敵対的エンティティ検索エラー: {e}")
-            
-        return None
-        
-    def _get_nearby_entities(self, max_distance=24):
-        """
-        指定した範囲内のすべてのエンティティを取得します。
+        指定した距離以内で最も近い敵対的なエンティティを取得します。
         
         Args:
             max_distance (int): 検索する最大距離。デフォルトは24
             
         Returns:
-            list: 範囲内のエンティティのリスト
+            Entity or None: 最も近い敵対的なエンティティ。見つからない場合はNone
         """
-        entities = []
+        def calculate_distance(pos1, pos2):
+            """2点間のユークリッド距離を計算"""
+            return ((pos1.x - pos2.x) ** 2 + 
+                   (pos1.y - pos2.y) ** 2 + 
+                   (pos1.z - pos2.z) ** 2) ** 0.5
+
+        # 敵対的なエンティティをフィルタリング
+        hostile_entities = [
+            entity for entity in self._get_nearby_entities(max_distance)
+            if self._is_hostile(entity)
+        ]
         
-        # JavaScriptのentitiesプロパティにアクセス
-        bot_entities = getattr(self.bot, 'entities', None)
-        if bot_entities:
-            # JavaScriptオブジェクトの各プロパティを反復処理
-            for entity_id in bot_entities:
-                entity = bot_entities[entity_id]
-                # エンティティが有効で、プレイヤーとの距離が範囲内の場合のみ追加
-                if (entity and 
-                    hasattr(entity, 'position') and 
-                    hasattr(self.bot.entity, 'position') and
-                    self.bot.entity.position.distanceTo(entity.position) <= max_distance):
-                    entities.append(entity)
-                    
-        return entities
+        if not hostile_entities:
+            return None
+            
+        # 距離でソート
+        hostile_entities.sort(
+            key=lambda e: calculate_distance(self.bot.entity.position, e.position)
+        )
+        
+        return hostile_entities[0] if hostile_entities else None
+        
+    def _get_nearby_entities(self, max_distance=24):
+        """
+        指定した距離以内にある全てのエンティティを取得します。
+        
+        Args:
+            max_distance (int): 検索する最大距離。デフォルトは24
+            
+        Returns:
+            list: 近くのエンティティのリスト
+        """
+        if not self.bot or not self.bot.entity or not hasattr(self.bot.entity, 'position'):
+            return []
+            
+        def calculate_distance(pos1, pos2):
+            """2点間のユークリッド距離を計算"""
+            return ((pos1.x - pos2.x) ** 2 + 
+                   (pos1.y - pos2.y) ** 2 + 
+                   (pos1.z - pos2.z) ** 2) ** 0.5
+            
+        nearby_entities = []
+        # JavaScriptのオブジェクトとして実装されているentitiesを直接反復処理
+        for entity_id in self.bot.entities:
+            entity = self.bot.entities[entity_id]
+            if (hasattr(entity, 'type') and 
+                entity.type == 'mob' and 
+                hasattr(entity, 'position') and 
+                entity.position and 
+                calculate_distance(self.bot.entity.position, entity.position) <= max_distance):
+                nearby_entities.append(entity)
+                
+        return nearby_entities
         
     def _is_entity_nearby(self, entity, max_distance=24):
         """
