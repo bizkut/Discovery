@@ -1767,78 +1767,110 @@ class Skills:
         
     async def move_to_position(self, x, y, z, min_distance=2):
         """
-        指定された位置まで移動します。
+        指定された位置に移動します。
+        現在位置と目標位置が十分に近い場合（min_distance以内）は移動をスキップします。
         
         Args:
-            x (float): X座標
-            y (float): Y座標
-            z (float): Z座標
-            min_distance (int): 目標位置からの最小距離
+            x (float): 移動先のX座標
+            y (float): 移動先のY座標
+            z (float): 移動先のZ座標
+            min_distance (int): 目標位置からの最小距離。デフォルトは2
             
         Returns:
             dict: 結果を含む辞書
                 - success (bool): 移動に成功した場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
-                - position (dict): 到達した位置 {x, y, z}
-                - error (str, optional): エラーがある場合のエラーコード
-            
-        Example:
-            >>> result = await skills.move_to_position(100, 64, 100)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
+                - position (dict): 現在位置 {x, y, z}
         """
+        # 現在位置と目標位置を取得
+        current_pos = self.bot.entity.position
+        
         result = {
             "success": False,
             "message": "",
-            "position": {"x": x, "y": y, "z": z}
-        }
-        
-        if x is None or y is None or z is None:
-            result["message"] = f"移動先の座標が不完全です：x:{x} y:{y} z:{z}"
-            result["error"] = "invalid_coordinates"
-            self.bot.chat(result["message"])
-            return result
-                
-        # チートモードの場合はテレポート
-        if hasattr(self.bot.modes, 'isOn') and self.bot.modes.isOn('cheat'):
-            self.bot.chat(f"/tp @s {x} {y} {z}")
-            result["message"] = f"{x}, {y}, {z}にテレポートしました"
-            result["success"] = True
-            self.bot.chat(result["message"])
-            return result
-            
-        # パスファインダーを使用して移動
-        Goal = self.pathfinder.goals
-        try:
-            # パスファインダーの設定
-            self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
-            goal = Goal.GoalNear(x, y, z, min_distance)
-            
-            # 移動実行
-            self.bot.pathfinder.goto(goal)
-            
-            # 現在位置を取得して結果に設定
-            current_pos = self.bot.entity.position
-            result["position"] = {
+            "position": {
                 "x": current_pos.x,
                 "y": current_pos.y,
                 "z": current_pos.z
             }
-            
-            result["message"] = f"{x}, {y}, {z}に到着しました"
+        }
+        
+        # 現在位置と目標位置の距離を計算
+        distance_to_target = ((current_pos.x - x) ** 2 + 
+                             (current_pos.y - y) ** 2 + 
+                             (current_pos.z - z) ** 2) ** 0.5
+        
+        # 既に目標位置に十分近い場合は移動をスキップ
+        if distance_to_target <= min_distance:
             result["success"] = True
+            result["message"] = f"既に目標位置 {x}, {y}, {z} の近く（{distance_to_target:.2f}ブロック）にいます。移動をスキップします。"
             return result
+        
+        try:
+            # チートモードの場合はテレポート
+            if hasattr(self.bot.modes, 'isOn') and self.bot.modes.isOn('cheat'):
+                self.bot.chat(f'/tp @s {x} {y} {z}')
+                result["success"] = True
+                result["message"] = f"チートモードで{x}, {y}, {z}にテレポートしました。"
+                result["position"] = {"x": x, "y": y, "z": z}
+                return result
+            
+            # 目標位置を設定
+            goal = self.pathfinder.goals.GoalNear(x, y, z, min_distance)
+            
+            # パスファインダーの動きを設定
+            movements = self.pathfinder.Movements(self.bot)
+            self.bot.pathfinder.setMovements(movements)
+            
+            # タイムアウトを設定して目標に向かう
+            # JavaScriptプロキシを通じた呼び出しでタイムアウトを明示的に設定
+            try:
+                self.bot.pathfinder.goto(goal, timeout=30000)  # タイムアウトを30秒に設定
+                result["success"] = True
+                result["message"] = f"目標位置 {x}, {y}, {z} に到達しました。"
+                result["position"] = {
+                    "x": self.bot.entity.position.x,
+                    "y": self.bot.entity.position.y,
+                    "z": self.bot.entity.position.z
+                }
+            except Exception as e:
+                # タイムアウトエラーが発生した場合でも、ある程度移動している可能性がある
+                current_pos = self.bot.entity.position
+                if not e.__str__().startswith("Call to 'goto' timed out"):
+                    # タイムアウト以外のエラーの場合
+                    result["success"] = False
+                    result["message"] = f"移動中にエラーが発生しました: {str(e)}"
+                    result["error"] = "movement_error"
+                else:
+                    # タイムアウトエラーの場合は、現在の位置を確認
+                    distance_to_target = ((current_pos.x - x) ** 2 + 
+                                         (current_pos.y - y) ** 2 + 
+                                         (current_pos.z - z) ** 2) ** 0.5
+                    
+                    # 目標からの距離が十分に近い場合は成功と見なす
+                    if distance_to_target <= min_distance + 2:
+                        result["success"] = True
+                        result["message"] = f"タイムアウトしましたが、目標位置 {x}, {y}, {z} の近くに到達しました。"
+                    else:
+                        result["success"] = False
+                        result["message"] = f"タイムアウトにより目標位置 {x}, {y}, {z} に到達できませんでした。"
+                        result["error"] = "timeout_error"
+                    
+                # 現在位置を更新
+                result["position"] = {
+                    "x": current_pos.x,
+                    "y": current_pos.y,
+                    "z": current_pos.z
+                }
             
         except Exception as e:
-            result["message"] = f"移動中にエラーが発生しました: {str(e)}"
-            result["error"] = "movement_error"
+            result["message"] = f"移動中に予期せぬエラーが発生しました: {str(e)}"
             self.bot.chat(result["message"])
-            print(f"移動エラー: {e}")
             import traceback
             traceback.print_exc()
-            return result
+            result["error"] = "unexpected_error"
+            
+        return result
         
     async def smelt_item(self, item_name, num=1):
         """
@@ -1922,10 +1954,10 @@ class Skills:
         # かまどを開く
         try:
             # かまどを見る
-            await self.bot.lookAt(furnace_block.position)
+            self.bot.lookAt(furnace_block.position)
             
             # かまどを開く
-            furnace = await self.bot.openFurnace(furnace_block)
+            furnace = self.bot.openFurnace(furnace_block)
             
             # 既に精錬中のアイテムがあるか確認
             input_item = furnace.inputItem()
@@ -1933,7 +1965,7 @@ class Skills:
                 if self._get_item_name(input_item.type) != item_name:
                     result["message"] = f"かまどは既に{self._get_item_name(input_item.type)}を精錬中です"
                     result["error"] = "already_smelting"
-                    await furnace.close()
+                    furnace.close()
                     
                     # 設置したかまどを回収
                     if placed_furnace:
@@ -1947,7 +1979,7 @@ class Skills:
             if not inv_counts.get(item_name, 0) or inv_counts.get(item_name, 0) < num:
                 result["message"] = f"精錬するための{item_name}が足りません"
                 result["error"] = "insufficient_items"
-                await furnace.close()
+                furnace.close()
                 
                 # 設置したかまどを回収
                 if placed_furnace:
@@ -1962,7 +1994,7 @@ class Skills:
                 if not fuel:
                     result["message"] = f"{item_name}を精錬するための燃料（石炭、木炭、木材など）がありません"
                     result["error"] = "no_fuel"
-                    await furnace.close()
+                    furnace.close()
                     
                     # 設置したかまどを回収
                     if placed_furnace:
@@ -1977,7 +2009,7 @@ class Skills:
                 if fuel.count < fuel_needed:
                     result["message"] = f"{num}個の{item_name}を精錬するには{fuel_needed}個の{fuel.name}が必要ですが、{fuel.count}個しかありません"
                     result["error"] = "insufficient_fuel"
-                    await furnace.close()
+                    furnace.close()
                     
                     # 設置したかまどを回収
                     if placed_furnace:
@@ -1987,12 +2019,12 @@ class Skills:
                     return result
                     
                 # 燃料を投入
-                await furnace.putFuel(fuel.type, None, fuel_needed)
+                furnace.putFuel(fuel.type, None, fuel_needed)
                 self.bot.chat(f"かまどに{fuel_needed}個の{fuel.name}を燃料として投入しました")
                 
             # 精錬するアイテムをかまどに入れる
             item_id = self._get_item_id(item_name)
-            await furnace.putInput(item_id, None, num)
+            furnace.putInput(item_id, None, num)
             
             # 精錬が完了するまで待機して結果を収集
             total_smelted = 0
@@ -2009,7 +2041,7 @@ class Skills:
                 # 結果を確認
                 collected = False
                 if furnace.outputItem():
-                    smelted_item = await furnace.takeOutput()
+                    smelted_item = furnace.takeOutput()
                     if smelted_item:
                         total_smelted += smelted_item.count
                         collected = True
@@ -2021,7 +2053,7 @@ class Skills:
                 collected_last = collected
                 
             # かまどを閉じる
-            await furnace.close()
+            furnace.close()
             
             # 設置したかまどを回収
             if placed_furnace:
@@ -2122,27 +2154,19 @@ class Skills:
         
     def _get_item_name(self, item_id):
         """
-        アイテムIDからアイテム名を取得します。
+        アイテムIDから対応するアイテム名を取得します。
         
         Args:
-            item_id: アイテムID
+            item_id (int): アイテムのID
             
         Returns:
-            str: アイテム名
+            str: アイテム名。IDが見つからない場合はNone
         """
-        try:
-            if hasattr(self.mcdata, 'items'):
-                for item in self.mcdata.items:
-                    if item.id == item_id:
-                        return item.name
-            elif hasattr(self.bot.registry, 'itemsByType'):
-                item = self.bot.registry.itemsByType[item_id]
-                if item:
-                    return item.name
-        except:
-            pass
-            
-        return f"unknown_item_{item_id}"
+        item = self.mcdata.items[item_id]
+        
+        if item:
+            return item.name
+        return None
         
     def _get_item_id(self, item_name):
         """
@@ -2167,93 +2191,112 @@ class Skills:
         
     async def clear_nearest_furnace(self):
         """
-        最も近いかまどからすべてのアイテムを取り出します。
+        最も近いかまどを見つけ、中のアイテムをすべて取り出します。
         
         Returns:
             dict: 結果を含む辞書
-                - success (bool): 成功した場合はTrue
+                - success (bool): 操作に成功した場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
-                - error (str, optional): エラーがある場合のエラーコード
-                - items (dict, optional): 取り出したアイテムの情報
+                - items (list): 回収したアイテムのリスト
         """
         result = {
             "success": False,
             "message": "",
-            "items": {}
+            "items": []
         }
         
-        # かまどを探す
-        furnace_block = self.get_nearest_block('furnace', 32)
-        if not furnace_block:
-            result["message"] = "近くにかまどがありません"
-            result["error"] = "no_furnace"
-            self.bot.chat(result["message"])
-            return result
-            
-        # かまどまで移動
-        if self.bot.entity.position.distanceTo(furnace_block.position) > 4:
-            await self.move_to_position(
-                furnace_block.position.x, 
-                furnace_block.position.y, 
-                furnace_block.position.z, 
-                4
-            )
-            
         try:
+            # 最も近いかまどを見つける
+            furnace_block = self.get_nearest_block('furnace', 32)
+            if not furnace_block:
+                result["message"] = "近くにかまどが見つかりません"
+                result["error"] = "no_furnace"
+                return result
+                
+            # かまどまでの距離を確認
+            if self.bot.entity.position.distanceTo(furnace_block.position) > 4:
+                move_result = await self.move_to_position(
+                    furnace_block.position.x,
+                    furnace_block.position.y,
+                    furnace_block.position.z,
+                    2
+                )
+                if not move_result["success"]:
+                    result["message"] = "かまどに到達できませんでした"
+                    result["error"] = "cannot_reach"
+                    return result
+            
             # かまどを開く
-            furnace = await self.bot.openFurnace(furnace_block)
+            furnace = self.bot.openFurnace(furnace_block)
             
             # アイテムを取り出す
             smelted_item = None
-            input_item = None
+            input_item = None 
             fuel_item = None
             
             if furnace.outputItem():
-                smelted_item = await furnace.takeOutput()
+                smelted_item = furnace.takeOutput()
                 if smelted_item:
-                    result["items"]["output"] = {
+                    result["items"].append({
                         "name": self._get_item_name(smelted_item.type),
                         "count": smelted_item.count
-                    }
+                    })
                     
             if furnace.inputItem():
-                input_item = await furnace.takeInput()
+                input_item = furnace.takeInput()
                 if input_item:
-                    result["items"]["input"] = {
+                    result["items"].append({
                         "name": self._get_item_name(input_item.type),
                         "count": input_item.count
-                    }
+                    })
                     
             if furnace.fuelItem():
-                fuel_item = await furnace.takeFuel()
+                fuel_item = furnace.takeFuel()
                 if fuel_item:
-                    result["items"]["fuel"] = {
+                    result["items"].append({
                         "name": self._get_item_name(fuel_item.type),
                         "count": fuel_item.count
-                    }
+                    })
                     
             # かまどを閉じる
-            await furnace.close()
+            furnace.close()
             
-            # 結果メッセージを作成
-            smelted_desc = f"{smelted_item.count}個の{self._get_item_name(smelted_item.type)}" if smelted_item else "0個の精錬済みアイテム"
-            input_desc = f"{input_item.count}個の{self._get_item_name(input_item.type)}" if input_item else "0個の材料"
-            fuel_desc = f"{fuel_item.count}個の{self._get_item_name(fuel_item.type)}" if fuel_item else "0個の燃料"
+            # アイテムを名前でグループ化して合計を計算
+            item_totals = {}
             
-            result["message"] = f"かまどから{smelted_desc}、{input_desc}、{fuel_desc}を回収しました"
+            for item in result["items"]:
+                name = item["name"]
+                count = item["count"]
+                item_totals[name] = item_totals.get(name, 0) + count
+                
+            # 合計を新しいitemsリストに変換
+            grouped_items = []
+            for name, count in item_totals.items():
+                grouped_items.append({
+                    "name": name,
+                    "count": count
+                })
+                
+            # 結果を更新
+            result["items"] = grouped_items
+            
+            # 結果テキストを生成
+            text = ""
+            for item in grouped_items:
+                text += f"{item['count']}個の{item['name']}、"
+            text = text.rstrip("、")
+            if text=="" :
+                result["message"] = "かまどから回収を行いましたが、かまどは空でした"
+            else:
+                result["message"] = f"かまどから{text}を回収しました"
             result["success"] = True
             
-            self.bot.chat(result["message"])
             return result
             
         except Exception as e:
-            result["message"] = f"かまど操作中にエラーが発生しました: {str(e)}"
-            result["error"] = "furnace_error"
-            
+            result["message"] = f"かまどのクリア中にエラーが発生しました: {str(e)}"
             import traceback
             traceback.print_exc()
-            
-            self.bot.chat(result["message"])
             return result
         
     async def attack_nearest(self, mob_type, kill=True):
