@@ -18,6 +18,7 @@ class Discovery:
     def load_env(self):
         self.minecraft_host = os.getenv("MINECRAFT_HOST", "host.docker.internal")
         self.minecraft_port = os.getenv("MINECRAFT_PORT")
+        self.minecraft_version = os.getenv("MINECRAFT_VERSION")
         self.web_inventory_port = os.getenv("WEB_INVENTORY_PORT")
 
     def load_plugins(self):
@@ -40,11 +41,11 @@ class Discovery:
     def bot_join(self):
         """ボットをサーバーに接続します"""
         self.is_connected = False
-        
         self.bot = self.mineflayer.createBot({
             "host": self.minecraft_host,
             "port": self.minecraft_port,
-            "username": "BOT"
+            "username": "BOT",
+            "version": self.minecraft_version
         })
         
         # スポーン時の処理
@@ -155,10 +156,8 @@ async def run_craft_example():
     while True:
         try:
             print(input("Enter: "))
-            #print(await skills.craft_recipe("wooden_axe", 1))
-            print(await skills.place_block("stone", -2, -60, 4))
-            #position = skills.get_nearest_free_space()
-            #print(await skills.place_block("crafting_table", position.x, position.y, position.z))
+            #print(skills._get_nearby_entity_of_type("villager",60))
+            print(await skills.move_away(10))
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
