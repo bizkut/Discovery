@@ -1343,15 +1343,22 @@ class Skills:
         }
         
         try:
+            # 時間と天候をチェック
+            if not (self.bot.time.isNight or self.bot.isRaining):
+                result["message"] = "まだ寝る時間ではありません。夜または雷雨の時のみ寝ることができます。"
+                self.bot.chat(result["message"])
+                return result
+            
             # 近くのベッドを探す
+            # isABedメソッドを使用してベッドを検索
             beds = self.bot.findBlocks({
-                'matching': lambda block: 'bed' in block.name,
+                'matching': self.bot.isABed,
                 'maxDistance': 32,
                 'count': 1
             })
             
-            if not beds or len(beds) == 0:
-                result["message"] = "寝るためのベッドが見つかりませんでした。"
+            if not beds or not any(True for _ in beds):
+                result["message"] = "寝るためのベッドが32ブロック以内に見つかりませんでした。"
                 self.bot.chat(result["message"])
                 return result
                 
@@ -1369,21 +1376,17 @@ class Skills:
             # ベッドのブロックを取得
             bed = self.bot.blockAt(bed_pos)
             
-            # ベッドで寝る
-            await self.bot.sleep(bed)
-            self.bot.chat("ベッドで寝ています。")
-            
-            # unstuckモードを一時停止（ベッドに留まるため）
-            if hasattr(self.bot.modes, 'pause'):
-                self.bot.modes.pause('unstuck')
+            try:
+                # ベッドで寝る
+                await self.bot.sleep(bed)
+                result["success"] = True
+                result["message"] = "ベッドで寝ることに成功しました。"
+                self.bot.chat(result["message"])
                 
-            # 起きるまで待機
-            while self.bot.isSleeping:
-                await asyncio.sleep(0.5)
+            except Exception as e:
+                result["message"] = f"ベッドで寝る際にエラーが発生しました: {str(e)}"
+                self.bot.chat(result["message"])
                 
-            result["success"] = True
-            result["message"] = "目が覚めました。"
-            self.bot.chat(result["message"])
             return result
             
         except Exception as e:
