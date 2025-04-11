@@ -2188,7 +2188,25 @@ class Skills:
             
         # アイテムが見つからない場合はエラー
         return None
+    
+    def _get_item_id_from_entity(self, entity):
+        """
+        エンティティからアイテムIDを取得します。
         
+        Args:
+            entity: エンティティオブジェクト
+            
+        Returns:
+            int: アイテムID
+        """
+        # metadata の8番目の要素（インデックス7）にitemIdが含まれている
+        if entity and hasattr(entity, 'metadata'):
+            metadata_item = entity.metadata[8]
+            return metadata_item.itemId
+        
+        # 取得できない場合はNoneを返す
+        return None
+    
     async def clear_nearest_furnace(self):
         """
         最も近いかまどを見つけ、中のアイテムをすべて取り出します。
@@ -2299,28 +2317,22 @@ class Skills:
             traceback.print_exc()
             return result
         
-    async def attack_nearest(self, mob_type, kill=True):
+    async def attack_nearest(self, mob_type, kill=True,pickup_item=True):
         """
-        指定されたタイプのモブに攻撃します。
+        指定したタイプのモブを攻撃します。
         
         Args:
-            mob_type (str): 攻撃するモブのタイプ（例: "zombie", "skeleton"など）
-            kill (bool): モブを倒すまで攻撃し続けるかどうか。デフォルトはTrue
-            
+            mob_type: 攻撃するモブのタイプ
+            kill: モブが死ぬまで攻撃し続けるかどうか（デフォルトはTrue）
+            pickup_item: モブが死んだ時にドロップアイテムを拾うかどうか（デフォルトはTrue）
         Returns:
             dict: 結果を含む辞書
-                - success (bool): 攻撃に成功した場合はTrue、失敗した場合はFalse
+                - success (bool): 攻撃に成功した場合はTrue、失敗した場合はFalse 
                 - message (str): 結果メッセージ
-                - mob_type (str): 攻撃しようとしたモブのタイプ
-                - killed (bool, optional): モブを倒したかどうか
-                - error (str, optional): エラーがある場合のエラーコード
+                - mob_type (str): 攻撃したモブのタイプ
             
-        Example:
-            >>> result = await skills.attack_nearest("zombie")
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
+        Examples:
+            result = await skills.attack_nearest("zombie", True)
         """
         result = {
             "success": False,
@@ -2328,49 +2340,43 @@ class Skills:
             "mob_type": mob_type
         }
         
-        # 自己防衛モードを一時停止
-        if hasattr(self.bot.modes, 'pause'):
-            self.bot.modes.pause('cowardice')
-            
-            # 水中モブの場合、溺れ防止も無効化
-            if mob_type in ['drowned', 'cod', 'salmon', 'tropical_fish', 'squid']:
-                self.bot.modes.pause('self_preservation')
-                
-        # モブを探す
-        mob = self._get_nearby_entity_of_type(mob_type, 24)
+        # 近くのエンティティを取得
+        nearby_entities = self._get_nearby_entities(24)
+        # 指定されたmob_typeと一致するエンティティを検索
+        mob = None
+        for entity in nearby_entities:
+            if hasattr(entity, 'name') and entity.name == mob_type:
+                mob = entity
+                break
         
-        if not mob:
-            result["message"] = f"近くに{mob_type}が見つかりません"
-            result["error"] = "mob_not_found"
-            self.bot.chat(result["message"])
+        if mob and hasattr(mob, 'position') and mob.position:
+            attack_result = await self.attack_entity(mob, kill,pickup_item)
+            result.update(attack_result)
+            result["mob_type"] = mob_type
             return result
-            
-        # モブを攻撃
-        attack_result = await self.attack_entity(mob, kill)
-        result.update(attack_result)
-        result["mob_type"] = mob_type
         
+        result["message"] = f'{mob_type}が見つかりませんでした。'
+        self.bot.chat(result["message"])
         return result
-        
-    async def attack_entity(self, entity, kill=True):
+
+    async def attack_entity(self, entity, kill=True,pickup_item=True):
         """
-        指定されたエンティティを攻撃します。
+        指定したエンティティを攻撃します。
         
         Args:
             entity: 攻撃するエンティティ
-            kill (bool): エンティティを倒すまで攻撃し続けるかどうか。デフォルトはTrue
-            
+            kill: エンティティが死ぬまで攻撃し続けるかどうか（デフォルトはTrue）
+            pickup_item: エンティティが死んだ時にドロップアイテムを拾うかどうか（デフォルトはTrue）
         Returns:
             dict: 結果を含む辞書
                 - success (bool): 攻撃に成功した場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
                 - entity_name (str): 攻撃したエンティティの名前
                 - killed (bool, optional): エンティティを倒したかどうか
-                - error (str, optional): エラーがある場合のエラーコード
             
-        Example:
-            >>> entity = bot.nearbyEntities[0]
-            >>> result = await skills.attack_entity(entity)
+        Examples:
+            entity = nearby_entities[0]
+            result = await skills.attack_entity(entity)
         """
         result = {
             "success": False,
@@ -2378,100 +2384,90 @@ class Skills:
             "entity_name": entity.name if hasattr(entity, 'name') else "不明なエンティティ"
         }
         
-        # 最高攻撃力の武器を装備
-        await self._equip_highest_attack()
+        # エンティティの存在確認
+        if not entity or not hasattr(entity, 'position') or not entity.position:
+            result["message"] = "攻撃対象のエンティティが無効です"
+            result["error"] = "invalid_entity"
+            self.bot.chat(result["message"])
+            return result
         
+        # 最高攻撃力の武器を装備
+        wepon = await self._equip_highest_attack()
+        if not wepon:
+            result["message"] = "武器になるものがインベントリにありません。"
+            result["error"] = "no_weapon"
+            self.bot.chat(result["message"])
+            return result
+        
+        # エンティティの位置を保存
         position = entity.position
         
         if not kill:
             # エンティティが遠すぎる場合は近づく
-            if self.bot.entity.position.distanceTo(position) > 5:
-                move_result = await self.move_to_position(position.x, position.y, position.z)
-                if not move_result["success"]:
-                    result["message"] = f"{entity.name}への移動に失敗しました: {move_result['message']}"
-                    result["error"] = "movement_failed"
-                    self.bot.chat(result["message"])
-                    return result
-                    
+            try:
+                if self.bot.entity.position.distanceTo(position) > 5:
+                    await self.move_to_position(position.x, position.y, position.z)
+            except Exception as e:
+                result["message"] = f"エンティティへの移動中にエラーが発生しました: {str(e)}"
+                result["error"] = "movement_error"
+                self.bot.chat(result["message"])
+                return result
+                
             # 一度だけ攻撃
             try:
-                await self.bot.attack(entity)
-                result["message"] = f"{entity.name}を攻撃しました"
+                self.bot.attack(entity)
                 result["success"] = True
+                result["message"] = f"{entity.name}を1度攻撃しました"
                 result["killed"] = False
                 self.bot.chat(result["message"])
                 return result
             except Exception as e:
-                result["message"] = f"{entity.name}の攻撃中にエラーが発生しました: {str(e)}"
+                result["message"] = f"攻撃中にエラーが発生しました: {str(e)}"
                 result["error"] = "attack_error"
                 self.bot.chat(result["message"])
                 return result
         else:
-            # エンティティを倒すまで攻撃
-            try:
-                # PVPモジュールを使用して攻撃
-                if hasattr(self.bot, 'pvp'):
-                    self.bot.pvp.attack(entity)
-                    
-                    # エンティティが死ぬまで待機
-                    while self._is_entity_nearby(entity, 24):
-                        await asyncio.sleep(1)
-                    
-                    # PVP攻撃を停止
+            # PVPモジュールを使用
+            self.bot.pvp.attack(entity)
+            
+            # エンティティが死ぬまで待機
+            while self._is_entity_nearby(entity, 24):
+                await asyncio.sleep(1)
+                if hasattr(self.bot, 'interrupt_code') and self.bot.interrupt_code:
                     self.bot.pvp.stop()
-                    
-                    result["message"] = f"{entity.name}を倒しました"
-                    result["success"] = True
-                    result["killed"] = True
+                    result["message"] = "攻撃が中断されました"
                     self.bot.chat(result["message"])
-                    
-                    # 周囲のアイテムを拾う
-                    await self.pickup_nearby_items()
                     return result
-                else:
-                    # PVPモジュールがない場合は通常攻撃を繰り返す
-                    while self._is_entity_nearby(entity, 24):
-                        if self.bot.entity.position.distanceTo(entity.position) > 3:
-                            await self.move_to_position(entity.position.x, entity.position.y, entity.position.z, 2)
-                        
-                        try:
-                            await self.bot.attack(entity)
-                        except:
-                            pass
-                            
-                        await asyncio.sleep(0.5)
-                    
-                    result["message"] = f"{entity.name}を倒しました"
-                    result["success"] = True
-                    result["killed"] = True
-                    self.bot.chat(result["message"])
-                    
-                    # 周囲のアイテムを拾う
-                    await self.pickup_nearby_items()
-                    return result
-            except Exception as e:
-                result["message"] = f"{entity.name}の攻撃中にエラーが発生しました: {str(e)}"
-                result["error"] = "attack_error"
+            self.bot.pvp.stop()
+            
+            result["success"] = True
+            result["message"] = f"{entity.name}を倒しました"
+            result["killed"] = True
+            self.bot.chat(result["message"])
+            
+            # 周囲のアイテムを拾う
+            if pickup_item:
+                pickup_result = await self.pickup_nearby_items()
+                result["message"] += " "+ pickup_result["message"]
                 self.bot.chat(result["message"])
-                return result
-                
+            return result
+
     async def defend_self(self, range=9):
         """
         周囲の敵対的なモブからプレイヤーを守ります。
-        近くに敵対的なモブがいる限り、それらを倒し続けます。
+        敵対的なモブがいなくなるまで攻撃し続けます。
         
         Args:
-            range (int): モブを探す範囲。デフォルトは9
+            range: モブを探す範囲。デフォルトは9
             
         Returns:
             dict: 結果を含む辞書
                 - success (bool): 防衛に成功した場合はTrue、敵がいない場合はFalse
                 - message (str): 結果メッセージ
                 - enemies_killed (int): 倒した敵の数
-                - error (str, optional): エラーがある場合のエラーコード
-                
-        Example:
-            >>> result = await skills.defend_self()
+            
+        Examples:
+            result = await skills.defend_self()
         """
         result = {
             "success": False,
@@ -2479,21 +2475,11 @@ class Skills:
             "enemies_killed": 0
         }
         
-        # 自己防衛と臆病モードを一時停止
-        if hasattr(self.bot.modes, 'pause'):
-            self.bot.modes.pause('self_defense')
-            self.bot.modes.pause('cowardice')
-            
         attacked = False
         enemies_killed = 0
-        
-        # 近くの敵対的なモブを探す
         enemy = self._get_nearest_hostile_entity(range)
         
         while enemy:
-            attacked = True
-            
-            # 最高攻撃力の武器を装備
             await self._equip_highest_attack()
             
             # 敵との距離に応じた行動
@@ -2502,53 +2488,62 @@ class Skills:
             # クリーパーとファントム以外の敵が遠い場合は接近
             if enemy_distance >= 4 and enemy.name != 'creeper' and enemy.name != 'phantom':
                 try:
-                    if hasattr(self.bot.pathfinder, 'setMovements') and hasattr(self.pathfinder, 'Movements') and hasattr(self.pathfinder.goals, 'GoalFollow'):
-                        self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
-                        await self.bot.pathfinder.goto(self.pathfinder.goals.GoalFollow(enemy, 3.5), True)
-                except Exception as e:
+                    self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
+                    await self.bot.pathfinder.goto(self.pathfinder.goals.GoalFollow(enemy, 3.5), True)
+                except Exception:
                     # エンティティが死んでいる場合などはエラーを無視
                     pass
                     
             # 敵が近すぎる場合は距離を取る
             if enemy_distance <= 2:
                 try:
-                    if hasattr(self.bot.pathfinder, 'setMovements') and hasattr(self.pathfinder, 'Movements') and hasattr(self.pathfinder.goals, 'GoalInvert') and hasattr(self.pathfinder.goals, 'GoalFollow'):
-                        self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
-                        inverted_goal = self.pathfinder.goals.GoalInvert(self.pathfinder.goals.GoalFollow(enemy, 2))
-                        await self.bot.pathfinder.goto(inverted_goal, True)
-                except Exception as e:
+                    self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
+                    inverted_goal = self.pathfinder.goals.GoalInvert(self.pathfinder.goals.GoalFollow(enemy, 2))
+                    await self.bot.pathfinder.goto(inverted_goal, True)
+                except Exception:
                     # エンティティが死んでいる場合などはエラーを無視
                     pass
-                    
-            # PVPモジュールを使用して攻撃
-            if hasattr(self.bot, 'pvp'):
+            
+            # 攻撃開始
+            has_pvp = hasattr(self.bot, 'pvp') and self.bot.pvp is not None
+            
+            if has_pvp:
                 self.bot.pvp.attack(enemy)
+            else:
+                # pvpがない場合は直接攻撃
+                self.bot.attack(enemy)
                 
+            attacked = True
+            
             # 少し待機
             await asyncio.sleep(0.5)
             
-            # 敵の状態を確認
+            # 次の敵を探す
             previous_enemy = enemy
             enemy = self._get_nearest_hostile_entity(range)
             
             # 前の敵がいなくなった場合はカウント
             if enemy != previous_enemy and not self._is_entity_nearby(previous_enemy, range):
                 enemies_killed += 1
-                
-        # PVP攻撃を停止
-        if hasattr(self.bot, 'pvp'):
-            self.bot.pvp.stop()
             
-        # 結果を設定
+            if hasattr(self.bot, 'interrupt_code') and self.bot.interrupt_code:
+                if has_pvp:
+                    self.bot.pvp.stop()
+                result["message"] = "防衛が中断されました"
+                self.bot.chat(result["message"])
+                return result
+        
+        # PVP攻撃を停止
+        if hasattr(self.bot, 'pvp') and self.bot.pvp is not None:
+            self.bot.pvp.stop()
+        
         if attacked:
-            result["message"] = f"自己防衛に成功しました。{enemies_killed}体の敵を倒しました。"
             result["success"] = True
+            result["message"] = f"自己防衛に成功しました。{enemies_killed}体の敵を倒しました。"
             result["enemies_killed"] = enemies_killed
         else:
             result["message"] = "近くに敵対的なモブがいません。"
-            result["success"] = False
-            result["enemies_killed"] = 0
-            
+        
         self.bot.chat(result["message"])
         return result
         
@@ -2567,49 +2562,65 @@ class Skills:
         """
         result = {
             "success": False,
-            "message": "",
-            "picked_up": 0
+            "message": ""
         }
         
         distance = 8
-        picked_up = 0
         
         # 最も近いアイテムを取得する関数
         def get_nearest_item():
-            return self.bot.nearestEntity(
-                lambda entity: entity.name == 'item' and 
-                self.bot.entity.position.distanceTo(entity.position) < distance
-            )
+            nearest_item = None
+            min_distance = float('inf')
             
+            # bot.entities はエンティティの辞書やリストと仮定
+            for entity_id in self.bot.entities:
+                entity = self.bot.entities[entity_id]
+                if hasattr(entity, 'name') and entity.name == 'item':
+                    # 距離計算
+                    dx = self.bot.entity.position.x - entity.position.x
+                    dy = self.bot.entity.position.y - entity.position.y
+                    dz = self.bot.entity.position.z - entity.position.z
+                    current_distance = (dx*dx + dy*dy + dz*dz) ** 0.5
+                    
+                    if current_distance < distance and current_distance < min_distance:
+                        min_distance = current_distance
+                        nearest_item = entity
+            return nearest_item
+
         # 最も近いアイテムを取得
         nearest_item = get_nearest_item()
-        
-        while nearest_item:
-            # アイテムに近づく
-            if hasattr(self.bot.pathfinder, 'setMovements') and hasattr(self.pathfinder, 'Movements') and hasattr(self.pathfinder.goals, 'GoalFollow'):
-                self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
-                await self.bot.pathfinder.goto(self.pathfinder.goals.GoalFollow(nearest_item, 0.8), True)
+        item_list = []
+        if nearest_item:
+            while nearest_item:
+                # アイテムに近づく
+                if hasattr(self.bot.pathfinder, 'setMovements') and hasattr(self.pathfinder, 'Movements') and hasattr(self.pathfinder.goals, 'GoalFollow'):
+                    await self.move_to_position(nearest_item.position.x, nearest_item.position.y, nearest_item.position.z, 0.8)
+                # アイテムIDを取得
+                item_id = self._get_item_id_from_entity(nearest_item)
+                item_name = self._get_item_name(item_id)
+                item_list.append(item_name)
+                # 少し待機してアイテムが拾われるのを待つ
+                await asyncio.sleep(0.2)
                 
-            # 少し待機してアイテムが拾われるのを待つ
-            await asyncio.sleep(0.2)
-            
-            # 前のアイテムを保存
-            prev_item = nearest_item
-            
-            # 新しい最寄りのアイテムを取得
-            nearest_item = get_nearest_item()
-            
-            # 同じアイテムが最も近い場合は終了（拾えなかった）
-            if prev_item == nearest_item:
-                break
+
+                # 前のアイテムを保存
+                prev_item = nearest_item
+                
+                # 新しい最寄りのアイテムを取得
+                nearest_item = get_nearest_item()
+                # 同じアイテムが最も近い場合は終了（拾えなかった）
+                if prev_item == nearest_item:
+                    break
                     
-            picked_up += 1
-            
-        result["picked_up"] = picked_up
-        result["success"] = picked_up > 0
-        result["message"] = f"{picked_up}個のアイテムを拾いました。"
-        self.bot.chat(result["message"])
-        return result
+            result["success"] = True
+            item_str = ", ".join(item_list)
+            result["message"] = f"{item_str}を拾いました。"
+            self.bot.chat(result["message"])
+            return result
+        else:
+            result["message"] = "ドロップアイテムはありません。"
+            self.bot.chat(result["message"])
+            return result
         
     async def _equip_highest_attack(self):
         """
@@ -2664,7 +2675,7 @@ class Skills:
             
         # 最高の武器を装備
         best_weapon = weapons[0]
-        await self.bot.equip(best_weapon, 'hand')
+        self.bot.equip(best_weapon, 'hand')
         return True
         
     def _get_nearby_entity_of_type(self, entity_type, max_distance=24):
@@ -2722,13 +2733,13 @@ class Skills:
         
     def _get_nearby_entities(self, max_distance=24):
         """
-        指定した距離以内にある全てのエンティティを取得します。
+        指定した距離以内にある全てのエンティティを取得し、距離順にソートして返します。
         
         Args:
             max_distance (int): 検索する最大距離。デフォルトは24
             
         Returns:
-            list: 近くのエンティティのリスト
+            list: 距離順にソートされた近くのエンティティのリスト
         """
         if not self.bot or not self.bot.entity or not hasattr(self.bot.entity, 'position'):
             return []
@@ -2740,16 +2751,25 @@ class Skills:
                    (pos1.z - pos2.z) ** 2) ** 0.5
             
         nearby_entities = []
-        # JavaScriptのオブジェクトとして実装されているentitiesを直接反復処理
+        # JavaScriptのオブジェクトとして実装されているentitiesをキーで反復処理
         for entity_id in self.bot.entities:
             entity = self.bot.entities[entity_id]
-            if (hasattr(entity, 'type') and 
-                entity.type == 'mob' and 
-                hasattr(entity, 'position') and 
-                entity.position and 
-                calculate_distance(self.bot.entity.position, entity.position) <= max_distance):
-                nearby_entities.append(entity)
+            if not entity or not hasattr(entity, 'id'):  # エンティティがNoneの場合はスキップ
+                continue
                 
+            if entity.id == self.bot.entity.id:  # 自分自身は除外
+                continue
+                
+            if hasattr(entity, 'position') and entity.position:
+                distance = calculate_distance(self.bot.entity.position, entity.position)
+                if distance <= max_distance:
+                    nearby_entities.append(entity)
+                
+        # 距離でソート
+        nearby_entities.sort(
+            key=lambda e: calculate_distance(self.bot.entity.position, e.position)
+        )
+        
         return nearby_entities
         
     def _is_entity_nearby(self, entity, max_distance=24):
@@ -2763,16 +2783,15 @@ class Skills:
         Returns:
             bool: エンティティが近くにいる場合はTrue
         """
-        try:
-            entities = self._get_nearby_entities(max_distance)
-            for e in entities:
-                if e.id == entity.id:
-                    return True
-        except:
-            pass
+        # エンティティが有効かチェック
+        if not entity or not hasattr(entity, 'id'):
+            return False
             
+        entities = self._get_nearby_entities(max_distance)
+        for e in entities:
+            if hasattr(e, 'id') and e.id == entity.id:
+                return True
         return False
-        
     def _is_hostile(self, entity):
         """
         エンティティが敵対的かどうかを判断します。
