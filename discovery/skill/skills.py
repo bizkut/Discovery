@@ -1533,6 +1533,7 @@ class Skills:
                 # 敵から少し離れるためのゴールを設定
                 follow_goal = self.pathfinder.goals.GoalFollow(enemy, distance + 1)
                 inverted_goal = self.pathfinder.goals.GoalInvert(follow_goal)
+                
                 movements = self.pathfinder.Movements(self.bot)
                 self.bot.pathfinder.setMovements(movements)
                 self.bot.pathfinder.setGoal(inverted_goal, True)
@@ -2454,9 +2455,9 @@ class Skills:
 
     async def defend_self(self, range=9):
         """
-        周囲の敵対的なモブからプレイヤーを守ります。
+        周囲の敵対的なモブから自身を守ります。
         敵対的なモブがいなくなるまで攻撃し続けます。
-        
+        もし武器を装備していない場合は、敵から逃げます。
         Args:
             range: モブを探す範囲。デフォルトは9
             
@@ -2478,10 +2479,15 @@ class Skills:
         attacked = False
         enemies_killed = 0
         enemy = self._get_nearest_hostile_entity(range)
-        
+        wepon = await self._equip_highest_attack()
+        if not wepon:
+            self.bot.chat("武器になるものがインベントリにありません。敵から逃げます。")
+            await self.avoid_enemies()
+            result["message"] = "武器になるものがインベントリにありません。敵から逃げます。"
+            result["error"] = "no_weapon"
+            self.bot.chat(result["message"])
+            return result
         while enemy:
-            await self._equip_highest_attack()
-            
             # 敵との距離に応じた行動
             enemy_distance = self.bot.entity.position.distanceTo(enemy.position)
             
@@ -2507,11 +2513,7 @@ class Skills:
             # 攻撃開始
             has_pvp = hasattr(self.bot, 'pvp') and self.bot.pvp is not None
             
-            if has_pvp:
-                self.bot.pvp.attack(enemy)
-            else:
-                # pvpがない場合は直接攻撃
-                self.bot.attack(enemy)
+            self.bot.pvp.attack(enemy)
                 
             attacked = True
             
