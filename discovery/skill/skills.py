@@ -168,6 +168,7 @@ class Skills:
         """
         try:
             Vec3 = require('vec3')
+            result = None
         
             # 空気ブロックを検索
             empty_pos = self.bot.findBlocks({
@@ -207,7 +208,7 @@ class Skills:
                 # 適切なスペースが見つかった場合は、そのポジションを返す
                 if empty:
                     result = Vec3(pos.x, pos.y + y_offset, pos.z)
-                return result
+                    return result
             
             # 適切なスペースが見つからなかった場合は、デフォルトとしてボットの足元の座標を返す
             position = self.bot.entity.position
@@ -1771,6 +1772,7 @@ class Skills:
         """
         指定された位置に移動します。
         現在位置と目標位置が十分に近い場合（min_distance以内）は移動をスキップします。
+        移動中にスタックを検出した場合は、一時的な目標地点に移動して解消を試みます。
         
         Args:
             x (float): 移動先のX座標
@@ -1825,48 +1827,61 @@ class Skills:
             
             # パスファインダーの動きを設定
             movements = self.pathfinder.Movements(self.bot)
+            movements.canDig = canDig
+            movements.dontCreateFlow = dontcreateflow
+            movements.dontMineUnderFaillingBlock = dontMineUnderFaillingBlock
             self.bot.pathfinder.setMovements(movements)
             
             # タイムアウトを設定して目標に向かう
             # JavaScriptプロキシを通じた呼び出しでタイムアウトを明示的に設定
-            try:
-                self.bot.pathfinder.goto(goal, timeout=30000)  # タイムアウトを30秒に設定
-                result["success"] = True
-                result["message"] = f"目標位置 {x}, {y}, {z} に到達しました。"
-                result["position"] = {
-                    "x": self.bot.entity.position.x,
-                    "y": self.bot.entity.position.y,
-                    "z": self.bot.entity.position.z
-                }
-            except Exception as e:
-                # タイムアウトエラーが発生した場合でも、ある程度移動している可能性がある
-                current_pos = self.bot.entity.position
-                if not e.__str__().startswith("Call to 'goto' timed out"):
-                    # タイムアウト以外のエラーの場合
-                    result["success"] = False
-                    result["message"] = f"移動中にエラーが発生しました: {str(e)}"
-                    result["error"] = "movement_error"
-                else:
-                    # タイムアウトエラーの場合は、現在の位置を確認
-                    distance_to_target = ((current_pos.x - x) ** 2 + 
-                                         (current_pos.y - y) ** 2 + 
-                                         (current_pos.z - z) ** 2) ** 0.5
-                    
-                    # 目標からの距離が十分に近い場合は成功と見なす
-                    if distance_to_target <= min_distance + 2:
-                        result["success"] = True
-                        result["message"] = f"タイムアウトしましたが、目標位置 {x}, {y}, {z} の近くに到達しました。"
+            self.bot.pathfinder.setGoal(goal,True)
+            await asyncio.sleep(1)
+            print(f"isMoving:{self.bot.pathfinder.isMoving()}")
+            
+            last_position = None
+            stuck_time = 0
+            
+            while self.bot.pathfinder.isMoving():
+                mining = self.bot.pathfinder.isMining()
+                current_position = self.bot.entity.position
+                print(f"mining:{mining},position:{current_position}")
+                
+                # スタック検出ロジック
+                if not mining:
+                    if last_position and (
+                        abs(current_position.x - last_position.x) < 0.01 and
+                        abs(current_position.y - last_position.y) < 0.01 and
+                        abs(current_position.z - last_position.z) < 0.01
+                    ):
+                        stuck_time += 1
                     else:
-                        result["success"] = False
-                        result["message"] = f"タイムアウトにより目標位置 {x}, {y}, {z} に到達できませんでした。"
-                        result["error"] = "timeout_error"
+                        stuck_time = 0
                     
-                # 現在位置を更新
-                result["position"] = {
-                    "x": current_pos.x,
-                    "y": current_pos.y,
-                    "z": current_pos.z
-                }
+                    # 2秒以上同じ位置でスタックしている場合
+                    if stuck_time >= 2:
+                        self.bot.chat("スタックを検出しました。解消を試みます。")
+                        free_space = self.get_nearest_free_space(2)
+                        
+                        # 一時的な目標地点に移動
+                        temp_goal = self.pathfinder.goals.GoalNear(free_space.x, free_space.y, free_space.z, 0)
+                        self.bot.pathfinder.setGoal(temp_goal, True)
+                        await asyncio.sleep(2)
+                        
+                        # 元の目標地点に再設定
+                        self.bot.pathfinder.setGoal(goal, True)
+                        await asyncio.sleep(1)
+                        stuck_time = 0
+                
+                last_position = current_position
+                await asyncio.sleep(1)
+                
+            result["success"] = True
+            result["message"] = f"目標位置 {x}, {y}, {z} に到達しました。"
+            result["position"] = {
+                "x": self.bot.entity.position.x,
+                "y": self.bot.entity.position.y,
+                "z": self.bot.entity.position.z
+            }
             
         except Exception as e:
             result["message"] = f"移動中に予期せぬエラーが発生しました: {str(e)}"
@@ -2949,7 +2964,8 @@ class Skills:
         
     async def use_door(self, door_pos=None):
         """
-        指定された位置にあるドアを使用します。位置が指定されていない場合、最も近いドアを使用します。
+        指定された位置にあるドア・フェンスゲートを使用します。位置が指定されていない場合、最も近いドア・フェンスゲートを使用します。
+        なお、ドアにインタラクトしても開かないiron_door,iron_trapdoorは使用できません。
         
         Args:
             door_pos (Vec3, optional): 使用するドアの位置。Noneの場合は最も近いドアを使用します。
@@ -2958,7 +2974,7 @@ class Skills:
             dict: 結果を含む辞書
                 - success (bool): ドアの使用に成功した場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
-                - position (dict, optional): 使用したドアの位置 {x, y, z}（成功時のみ）
+                - door_position (dict, optional): 使用したドアの位置 {x, y, z}（成功時のみ）
                 
         Example:
             >>> result = await skills.use_door()
@@ -2980,7 +2996,16 @@ class Skills:
                 door_types = [
                     'oak_door', 'spruce_door', 'birch_door', 'jungle_door', 
                     'acacia_door', 'dark_oak_door', 'mangrove_door', 
-                    'cherry_door', 'bamboo_door', 'crimson_door', 'warped_door'
+                    'crimson_door', 'warped_door',
+
+                    'oak_fence_gate', 'spruce_fence_gate', 'birch_fence_gate', 'jungle_fence_gate',
+                    'acacia_fence_gate', 'dark_oak_fence_gate', 'mangrove_fence_gate',
+                    'crimson_fence_gate', 'warped_fence_gate'
+                ]
+                # トラップドアはハシゴ対応必要なため未実装
+                trapdoor_types = [
+                    'oak_trapdoor', 'spruce_trapdoor', 'birch_trapdoor', 'jungle_trapdoor',
+                    'acacia_trapdoor', 'dark_oak_trapdoor', 'mangrove_trapdoor'
                 ]
                 
                 for door_type in door_types:
@@ -2999,34 +3024,24 @@ class Skills:
                 return result
                 
             # 結果にドアの位置を記録
-            result["position"] = {
+            result["door_position"] = {
                 "x": door_pos.x,
                 "y": door_pos.y,
                 "z": door_pos.z
             }
             
             # ドアに近づく
-            if hasattr(self.pathfinder.goals, 'GoalNear'):
-                self.bot.pathfinder.setGoal(self.pathfinder.goals.GoalNear(
-                    door_pos.x, door_pos.y, door_pos.z, 1
-                ))
-                
-                # 移動に少し時間を与える
-                await asyncio.sleep(1)
-                
-                # 移動が完了するまで待機
-                while self.bot.pathfinder.isMoving():
-                    await asyncio.sleep(0.1)
+            await self.move_to_position(door_pos.x, door_pos.y, door_pos.z, 1,canDig=False)
                     
             # ドアブロックを取得
             door_block = self.bot.blockAt(door_pos)
             
             # ドアを見る
-            await self.bot.lookAt(door_pos)
+            self.bot.lookAt(door_pos)
             
             # ドアが閉まっている場合は開ける
-            if hasattr(door_block, '_properties') and not door_block._properties.get('open', False):
-                await self.bot.activateBlock(door_block)
+            if not door_block._properties.open:
+                self.bot.activateBlock(door_block)
                 
             # 前進
             self.bot.setControlState("forward", True)
@@ -3034,10 +3049,10 @@ class Skills:
             self.bot.setControlState("forward", False)
             
             # ドアを閉じる
-            await self.bot.activateBlock(door_block)
+            self.bot.activateBlock(door_block)
             
             result["success"] = True
-            result["message"] = f"座標({door_pos.x}, {door_pos.y}, {door_pos.z})のドアを使用しました。"
+            result["message"] = f"座標({door_pos.x}, {door_pos.y}, {door_pos.z})のドアを通過し、座標({self.bot.entity.position.x:.1f}, {self.bot.entity.position.y:.1f}, {self.bot.entity.position.z:.1f})に移動しました。"
             self.bot.chat(result["message"])
             return result
             
@@ -3046,8 +3061,7 @@ class Skills:
             self.bot.chat(result["message"])
             import traceback
             traceback.print_exc()
-            return result
-        
+            return result        
     async def till_and_sow(self, x, y, z, seed_type=None):
         """
         指定された座標の地面を耕し、指定された種を植えます。
@@ -3128,36 +3142,37 @@ class Skills:
                 result["message"] = f"ブロックの上に{above.name}があるため耕せません。"
                 self.bot.chat(result["message"])
                 return result
-                
+            
+            # クワを探して装備
+            hoe = None
+            for item in self.bot.inventory.items():
+                if 'hoe' in item.name:
+                    hoe = item
+                    break
+            if not hoe:
+                result["message"] = "クワを持っていないため耕せません。"
+                self.bot.chat(result["message"])
+                return result
+            else:
+                self.bot.equip(hoe, 'hand')
+                    
             # ブロックまでの距離が遠い場合は近づく
             if self.bot.entity.position.distanceTo(block.position) > 4.5:
                 pos = block.position
-                if hasattr(self.bot.pathfinder, 'setMovements') and hasattr(self.pathfinder, 'Movements'):
-                    self.bot.pathfinder.setMovements(self.pathfinder.Movements(self.bot))
-                    await self.bot.pathfinder.goto(self.pathfinder.goals.GoalNear(pos.x, pos.y, pos.z, 4))
+                move_result = await self.move_to_position(pos.x, pos.y, pos.z, 4)
+                if not move_result["success"]:
+                    result["message"] = move_result["message"]
+                    self.bot.chat(result["message"])
+                    return result
             
             # 既に農地でない場合は耕す
             if block.name != 'farmland':
-                # クワを探す
-                hoe = None
-                for item in self.bot.inventory.items():
-                    if 'hoe' in item.name:
-                        hoe = item
-                        break
-                        
-                if not hoe:
-                    result["message"] = "クワを持っていないため耕せません。"
-                    self.bot.chat(result["message"])
-                    return result
-                    
-                # クワを装備
-                await self.bot.equip(hoe, 'hand')
                 
                 # ブロックを耕す
-                await self.bot.activateBlock(block)
+                self.bot.activateBlock(block)
                 
                 result["tilled"] = True
-                self.bot.chat(f"座標({x}, {y}, {z})を耕しました。")
+                self.bot.chat(f"BOTは、座標({x}, {y}, {z})を耕しました。")
             else:
                 result["tilled"] = True
                 
@@ -3173,7 +3188,6 @@ class Skills:
                     if item.name == seed_type:
                         seeds = item
                         break
-                        
                 if not seeds:
                     result["message"] = f"{seed_type}を持っていないため植えられません。" + \
                                        (f"座標({x}, {y}, {z})は耕しました。" if result["tilled"] else "")
@@ -3185,11 +3199,11 @@ class Skills:
                     return result
                 
                 # 種を装備
-                await self.bot.equip(seeds, 'hand')
+                self.bot.equip(seeds, 'hand')
                 
                 # 種を植える（農地の上に設置）
                 # 底面に対して設置するので、Vec3(0, -1, 0)を使用
-                await self.bot.placeBlock(block, Vec3(0, -1, 0))
+                self.bot.placeBlock(block, Vec3(0, -1, 0))
                 
                 result["planted"] = True
                 result["seed_type"] = seed_type
