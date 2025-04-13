@@ -1,6 +1,6 @@
 from javascript import require, On, Once, AsyncTask, once, off
 import asyncio
-import os
+import math
 
 class Skills:
     def __init__(self, discovery):
@@ -1492,86 +1492,87 @@ class Skills:
 
     async def avoid_enemies(self, distance=16):
         """
-        周囲の敵対的なモブから指定した距離だけ離れます。
+        周囲の敵対的なエンティティから逃げます。
+        近くの全ての敵対的エンティティから最も離れる場所探し移動します。目的地到着後停止します。
         
         Args:
-            distance (int): モブから離れる距離。デフォルトは16
+            distance (int): 逃げる最大距離
             
         Returns:
             dict: 結果を含む辞書
-                - success (bool): 移動に成功した場合はTrue、失敗した場合はFalse
-                - message (str): 結果メッセージ
-                - enemies_avoided (int): 回避した敵の数
-                - start_position (dict): 開始位置 {x, y, z}
-                - end_position (dict, optional): 最終移動位置 {x, y, z}（成功時のみ）
-                
-        Example:
-            >>> result = await skills.avoid_enemies(8)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
-            "message": "",
-            "enemies_avoided": 0,
-            "start_position": {
-                "x": self.bot.entity.position.x,
-                "y": self.bot.entity.position.y,
-                "z": self.bot.entity.position.z
-            }
+            "message": ""
         }
         
-        try:
-            # 最初の敵を探す
-            enemy = self._get_nearest_hostile_entity(distance)
-            enemies_avoided = 0
-            
-            while enemy:
-                enemies_avoided += 1
-                # 敵から少し離れるためのゴールを設定
-                follow_goal = self.pathfinder.goals.GoalFollow(enemy, distance + 1)
-                inverted_goal = self.pathfinder.goals.GoalInvert(follow_goal)
-                
-                movements = self.pathfinder.Movements(self.bot)
-                self.bot.pathfinder.setMovements(movements)
-                self.bot.pathfinder.setGoal(inverted_goal, True)
-                
-                # 少し待機
-                await asyncio.sleep(0.5)
-                
-                # 再度敵を探す
-                enemy = self._get_nearest_hostile_entity(distance)
-                
-                # 中断コードが設定されている場合、ループを抜ける
-                if self.bot.interrupt_code:
-                    break
-                    
-                # 敵が近すぎる場合は攻撃
-                if enemy and self.bot.entity.position.distanceTo(enemy.position) < 3:
-                    await self.attack_entity(enemy, kill=False)
-            
-            # パスファインダーを停止
-            self.bot.pathfinder.stop()
-            
-            # 結果を設定
-            result["success"] = True
-            result["message"] = f"敵から{distance}ブロック離れました。"
-            result["enemies_avoided"] = enemies_avoided
-            result["end_position"] = {
-                "x": self.bot.entity.position.x,
-                "y": self.bot.entity.position.y,
-                "z": self.bot.entity.position.z
-            }
-            
+        # 近くの全てのエンティティを取得
+        nearby_entities = self._get_nearby_entities(distance)
+        
+        # 敵対的なエンティティをフィルタリング
+        hostile_entities = [entity for entity in nearby_entities if self._is_hostile(entity)]
+        
+        if not hostile_entities:
+            result["message"] = "近くに敵対的なエンティティはいません。"
+            self.bot.chat(result["message"])
             return result
             
-        except Exception as e:
-            result["message"] = f"敵から離れる際にエラーが発生しました: {str(e)}"
-            import traceback
-            traceback.print_exc()
-            return result
+        self.bot.chat(f"{len(hostile_entities)}体の敵対的なエンティティから逃げます。")
+        
+        # 現在のプレイヤーの位置
+        player_pos = self.bot.entity.position
+        
+        # 各敵からの反発ベクトルを計算（各敵からプレイヤーを遠ざける方向）
+        escape_vector = {'x': 0, 'y': 0, 'z': 0}
+        
+        for entity in hostile_entities:
+            # エンティティからプレイヤーへの方向ベクトル
+            dx = player_pos.x - entity.position.x
+            dy = player_pos.y - entity.position.y
+            dz = player_pos.z - entity.position.z
+            
+            # エンティティとの距離
+            dist = (dx**2 + dy**2 + dz**2) ** 0.5
+            
+            if dist < 0.1:  # 極端に近い場合、少しランダムな方向に逃げる
+                import random
+                dx = random.uniform(-1, 1)
+                dz = random.uniform(-1, 1)
+                dist = (dx**2 + dz**2) ** 0.5
+            
+            # 距離の逆数を重みとして使用（近い敵からより強く逃げる）
+            weight = 1.0 / (dist + 0.1)  # 0除算を防ぐ
+            
+            # 正規化（単位ベクトル化）して重み付け
+            norm = (dx**2 + dz**2) ** 0.5  # 水平方向の距離
+            if norm > 0:
+                escape_vector['x'] += (dx / norm) * weight
+                escape_vector['z'] += (dz / norm) * weight
+        
+        # 最終的な移動距離を計算（ベクトルの正規化）
+        magnitude = (escape_vector['x']**2 + escape_vector['z']**2) ** 0.5
+        if magnitude > 0:
+            escape_vector['x'] /= magnitude
+            escape_vector['z'] /= magnitude
+        else:
+            # 全方向から均等に敵がいる場合はランダムな方向に逃げる
+            import random
+            angle = random.uniform(0, 2 * 3.14159)
+            escape_vector['x'] = math.cos(angle)
+            escape_vector['z'] = math.sin(angle)
+        
+        # 最終的な目標位置を計算（現在位置 + 移動距離 * 方向ベクトル）
+        target_x = player_pos.x + distance * escape_vector['x'] # 敵から離れる方向
+        target_z = player_pos.z + distance * escape_vector['z'] # 敵から離れる方向
+        
+        # 目的地に移動
+        self.bot.chat(f"x:{target_x:.1f}, z:{target_z:.1f}の方向に逃げます。")
+        await self.move_to_position(target_x, player_pos.y, target_z, min_distance=2,canDig=False)
+        
+        result["success"] = True
+        result["message"] = "敵対的なエンティティから逃げました。"
+        self.bot.chat(result["message"])
+        return result
 
     async def collect_block(self, block_type, num=1, exclude=None):
         """
@@ -1766,7 +1767,7 @@ class Skills:
             print(f"ブロック名取得エラー: {e}")
             return []
         
-    async def move_to_position(self, x, y, z, min_distance=2):
+    async def move_to_position(self, x, y, z, min_distance=2, canDig=True,dontcreateflow=True,dontMineUnderFaillingBlock=True):
         """
         指定された位置に移動します。
         現在位置と目標位置が十分に近い場合（min_distance以内）は移動をスキップします。
@@ -1776,6 +1777,9 @@ class Skills:
             y (float): 移動先のY座標
             z (float): 移動先のZ座標
             min_distance (int): 目標位置からの最小距離。デフォルトは2
+            canDig (bool): ブロックを掘るかどうか。デフォルトはTrue
+            dontcreateflow (bool): 液体ブロックに接触するブロックを掘らないかどうか。デフォルトはTrue
+            dontMineUnderFaillingBlock (bool):砂などの落下ブロックの下で掘るのを許可するか。デフォルトはTrue
             
         Returns:
             dict: 結果を含む辞書
@@ -2478,12 +2482,11 @@ class Skills:
         
         attacked = False
         enemies_killed = 0
-        enemy = self._get_nearest_hostile_entity(range)
         wepon = await self._equip_highest_attack()
+        enemy = self._get_nearest_hostile_entity(range)
         if not wepon:
             self.bot.chat("武器になるものがインベントリにありません。敵から逃げます。")
-            await self.avoid_enemies()
-            result["message"] = "武器になるものがインベントリにありません。敵から逃げます。"
+            result["message"] = await self.avoid_enemies()
             result["error"] = "no_weapon"
             self.bot.chat(result["message"])
             return result
