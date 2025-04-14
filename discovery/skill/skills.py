@@ -3397,3 +3397,116 @@ class Skills:
             import traceback
             traceback.print_exc()
             return result
+
+    async def place_liquid(self, x, y, z, liquid_type='water'):
+        """
+        指定された座標に液体（水または溶岩）をバケツから配置します。
+        
+        Args:
+            x (float): 液体を配置するX座標
+            y (float): 液体を配置するY座標
+            z (float): 液体を配置するZ座標
+            liquid_type (str): 配置する液体の種類。'water'または'lava'を指定。デフォルトは'water'。
+            
+        Returns:
+            dict: 結果を含む辞書
+                - success (bool): 液体の配置に成功した場合はTrue、失敗した場合はFalse
+                - message (str): 結果メッセージ
+                - position (dict): 液体を配置した位置 {x, y, z}
+                - liquid_type (str): 配置した液体の種類
+                
+        Example:
+            >>> # 指定座標に水を配置する
+            >>> result = await skills.place_liquid(10, 65, 20, 'water')
+            >>> if result["success"]:
+            >>>     print(f"成功: {result['message']}")
+            >>> else:
+            >>>     print(f"失敗: {result['message']}")
+        """
+        result = {
+            "success": False,
+            "message": "",
+            "position": {"x": x, "y": y, "z": z},
+            "liquid_type": liquid_type
+        }
+        
+        try:
+            # 液体の種類を確認
+            if liquid_type not in ['water', 'lava']:
+                result["message"] = f"無効な液体タイプです: {liquid_type}。'water'または'lava'を指定してください。"
+                self.bot.chat(result["message"])
+                return result
+            
+            # 座標を整数に丸める
+            x = round(x)
+            y = round(y)
+            z = round(z)
+            result["position"] = {"x": x, "y": y, "z": z}
+            
+            # 液体入りバケツを探す
+            filled_bucket = None
+            
+            for item in self.bot.inventory.items():
+                if item.name == f"{liquid_type}_bucket":
+                    filled_bucket = item
+            
+            if not filled_bucket:
+                result["message"] = f"{liquid_type}_bucketを持っていないため液体を配置できません。"
+                self.bot.chat(result["message"])
+                return result
+            
+            # 対象のブロックを取得
+            Vec3 = require('vec3')
+            target_position = Vec3(x, y, z)
+            target_block = self.bot.blockAt(target_position)
+            
+            # 配置先が空気または他の配置可能なブロックかを確認
+            if target_block.name != 'air' and target_block.name != 'cave_air':
+                result["message"] = f"座標({x}, {y}, {z})には既に{target_block.name}があるため液体を配置できません。"
+                self.bot.chat(result["message"])
+                return result
+            
+            # ブロックまでの距離が遠い場合は近づく
+            if self.bot.entity.position.distanceTo(target_position) > 2:
+                move_result = await self.move_to_position(x, y, z, 2)
+                if not move_result["success"]:
+                    result["message"] = move_result["message"]
+                    self.bot.chat(result["message"])
+                    return result
+            
+            # 液体入りバケツを装備
+            self.bot.equip(filled_bucket, 'hand')
+            
+            # 対象ブロックを見る
+            self.bot.lookAt(target_position)
+            
+            # バケツを使って液体を配置
+            self.bot.activateBlock(target_block)
+            self.bot.activateItem()
+            
+            # 少し待機して操作が完了するのを待つ
+            await asyncio.sleep(1)
+            
+            # バケツを非アクティブ化
+            self.bot.deactivateItem()
+            
+            # 配置されたブロックを確認
+            new_block = self.bot.blockAt(target_position)
+            is_correct_liquid = new_block and new_block.name == liquid_type
+            
+            if is_correct_liquid:
+                result["success"] = True
+                result["message"] = f"座標({x}, {y}, {z})に{liquid_type}を{filled_bucket.name}から配置しました。"
+            else:
+                result["success"] = False
+                result["message"] = f"座標({x}, {y}, {z})への{liquid_type}の配置に失敗しました。"
+            
+            self.bot.chat(result["message"])
+            return result
+            
+        except Exception as e:
+            result["message"] = f"液体の配置中に予期せぬエラーが発生しました: {str(e)}"
+            self.bot.chat(result["message"])
+            import traceback
+            traceback.print_exc()
+            return result
