@@ -123,19 +123,12 @@ class Skills:
                 block_id = self.bot.registry.blocksByName[block_type].id
             else:
                 print(f"ブロック '{block_type}' がレジストリに見つかりません")
-
-            # matchingパラメータを適切に設定
-            matching = None
-            if block_id is not None:
-                matching = block_id
-            else:
-                # 直接ブロック名を使う（フォールバック）
-                matching = block_type
+                return None
                 
             # ブロックを検索
             block = self.bot.findBlock({
                 'point': self.bot.entity.position,
-                'matching': matching,
+                'matching': block_id,
                 'maxDistance': max_distance
             })
             
@@ -3275,3 +3268,132 @@ class Skills:
             ])
             
         return recipes
+
+    async def collect_liquid(self, liquid_type='water', max_distance=16):
+        """
+        指定された範囲内の水または溶岩をバケツで汲み上げます。
+        
+        Args:
+            liquid_type (str): 汲み上げる液体の種類。'water'または'lava'を指定。デフォルトは'water'。
+            max_distance (int): 探索する最大距離。デフォルトは16。
+            
+        Returns:
+            dict: 結果を含む辞書
+                - success (bool): 液体を汲み上げることに成功した場合はTrue、失敗した場合はFalse
+                - message (str): 結果メッセージ
+                - position (dict, optional): 汲み上げた液体の位置 {x, y, z}
+                - liquid_type (str): 汲み上げた液体の種類
+                
+        Example:
+            >>> # 近くの水をバケツで汲み上げる
+            >>> result = await skills.collect_liquid('water')
+            >>> if result["success"]:
+            >>>     print(f"成功: {result['message']}")
+            >>> else:
+            >>>     print(f"失敗: {result['message']}")
+        """
+        result = {
+            "success": False,
+            "message": "",
+            "liquid_type": liquid_type
+        }
+        
+        try:
+            # 液体の種類を確認
+            if liquid_type not in ['water', 'lava']:
+                result["message"] = f"無効な液体タイプです: {liquid_type}。'water'または'lava'を指定してください。"
+                self.bot.chat(result["message"])
+                return result
+            
+            # バケツを探す
+            bucket = None
+            bucket_count = 0
+            for item in self.bot.inventory.items():
+                if item.name == 'bucket':
+                    bucket = item
+                elif item.name == f'{liquid_type}_bucket':
+                    bucket_count += 1
+            bucket_count += 1
+            
+            if not bucket:
+                result["message"] = "バケツを持っていないため液体を汲み上げられません。"
+                self.bot.chat(result["message"])
+                return result
+            
+            # 指定された液体ブロックを探す
+            block_id = self.mcdata.blocksByName[liquid_type].id
+            blocks = self.bot.findBlocks({
+                'matching': block_id,
+                'maxDistance': max_distance,
+                'count': 10
+            })
+            for block in blocks:
+                block_info = self.bot.blockAt(block)
+                if block_info.metadata == 0:
+                    liquid_block = block_info
+                    break
+            
+            if not liquid_block:
+                result["message"] = f"範囲内に{liquid_type}が見つかりませんでした。"
+                self.bot.chat(result["message"])
+                return result
+            
+            # ブロックまでの距離が遠い場合は近づく
+            if self.bot.entity.position.distanceTo(liquid_block.position) > 2:
+                pos = liquid_block.position
+                move_result = await self.move_to_position(pos.x, pos.y, pos.z, 2)
+                if not move_result["success"]:
+                    result["message"] = move_result["message"]
+                    self.bot.chat(result["message"])
+                    return result
+            
+            # バケツを装備
+            self.bot.equip(bucket, 'hand')
+
+            # botが液体ブロックを見る
+            self.bot.lookAt(liquid_block.position)
+            
+            # バケツを使って液体を汲み上げる
+            self.bot.activateBlock(liquid_block)
+            self.bot.activateItem()
+            
+            # 少し待機して操作が完了するのを待つ
+            await asyncio.sleep(1)
+
+            # バケツを非アクティブ化
+            self.bot.deactivateItem()
+
+            # 結果を設定
+            result["success"] = True
+            result["position"] = {
+                "x": liquid_block.position.x,
+                "y": liquid_block.position.y,
+                "z": liquid_block.position.z
+            }
+            
+            # 正しい液体を汲み上げたかチェック（インベントリを確認）
+            has_filled_bucket = False
+            
+            for item in self.bot.inventory.items():
+                
+                if item.name == f"{liquid_type}_bucket":
+                    bucket_count -= 1
+                    if bucket_count == 0:
+                        has_filled_bucket = True
+                        break
+            
+            if has_filled_bucket:
+                result["message"] = f"座標({liquid_block.position.x}, {liquid_block.position.y}, {liquid_block.position.z})の{liquid_type}を{bucket.name}で汲み上げました。"
+            else:
+                result["success"] = False
+                result["message"] = f"{liquid_type}の汲み上げに失敗しました。"
+            
+            self.bot.chat(result["message"])
+            return result
+            
+        except Exception as e:
+            result["message"] = f"液体の汲み上げ中に予期せぬエラーが発生しました: {str(e)}"
+            self.bot.chat(result["message"])
+            import traceback
+            traceback.print_exc()
+            return result
