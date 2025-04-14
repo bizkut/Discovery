@@ -143,12 +143,14 @@ class Skills:
             traceback.print_exc()
             return None
     
-    def get_nearest_free_space(self, size=1, distance=8, y_offset=0):
+    def get_nearest_free_space(self, X_size=1, Y_size=1, Z_size=1, distance=15, y_offset=0):
         """
         指定されたサイズの空きスペース（上部が空気で下部が固体ブロック）を見つけます。
         
         Args:
-            size (int): 探す空きスペースの（size × size）サイズ。デフォルトは1。
+            X_size (int): 探す空きスペースのXサイズ。(Minecraftのブロックの幅)
+            Y_size (int): 探す空きスペースのYサイズ。(Minecraftのブロックの高さ)
+            Z_size (int): 探す空きスペースのZサイズ。(Minecraftのブロックの幅)
             distance (int): 探索する最大距離。デフォルトは8。
             y_offset (int): 見つかった空きスペースに適用するY座標オフセット。デフォルトは0。
             
@@ -165,7 +167,8 @@ class Skills:
         
             # 空気ブロックを検索
             empty_pos = self.bot.findBlocks({
-                'matching': lambda block: block and block.name == 'air',
+                'point': self.bot.entity.position,
+                'matching': self.mcdata.blocksByName['air'].id,
                 'maxDistance': distance,
                 'count': 1000
             })
@@ -173,39 +176,44 @@ class Skills:
             # 各空気ブロックについて、指定されたサイズの空きスペースを確認
             for pos in empty_pos:
                 empty = True
-                for x_offset in range(size):
-                    for z_offset in range(size):
-                        # 上部のブロックが空気であることを確認
-                        top = self.bot.blockAt(Vec3(
-                            pos.x + x_offset,
-                            pos.y,
-                            pos.z + z_offset
-                        ))
+
+                # ボットの位置と同じ場合はスキップ
+                bot_pos = self.bot.blockAt(self.bot.entity.position).position
+                if (pos.x == bot_pos.x and pos.y == bot_pos.y and pos.z == bot_pos.z):
+                    continue
+                # 空きスペースを確認
+                for x_offset in range(X_size):
+                    for y_offset in range(Y_size):
+                        for z_offset in range(Z_size):
+                            # 上部のブロックが空気であることを確認
+                            top = self.bot.blockAt(Vec3(
+                                pos.x + x_offset,
+                                pos.y + y_offset,
+                                pos.z + z_offset
+                            ))
+                            
+                            # 下部のブロックが掘れる固体ブロックであることを確認
+                            bottom = self.bot.blockAt(Vec3(
+                                pos.x + x_offset,
+                                pos.y - 1,
+                                pos.z + z_offset
+                            ))
+                            # 条件チェック
+                            if (not top or top.name != 'air' or 
+                                not bottom or not hasattr(bottom, 'drops') or not bottom.diggable):
+                                empty = False
+                                break
                         
-                        # 下部のブロックが掘れる固体ブロックであることを確認
-                        bottom = self.bot.blockAt(Vec3(
-                            pos.x + x_offset,
-                            pos.y - 1,
-                            pos.z + z_offset
-                        ))
-                        
-                        # 条件チェック（Proxyオブジェクトにlen()が使えないため修正）
-                        if (not top or top.name != 'air' or 
-                            not bottom or not hasattr(bottom, 'drops') or not bottom.drops or not bottom.diggable):
-                            empty = False
+                        if not empty:
                             break
-                    
-                    if not empty:
-                        break
                 
                 # 適切なスペースが見つかった場合は、そのポジションを返す
                 if empty:
-                    result = Vec3(pos.x, pos.y + y_offset, pos.z)
+                    result = pos
                     return result
             
-            # 適切なスペースが見つからなかった場合は、デフォルトとしてボットの足元の座標を返す
-            position = self.bot.entity.position
-            return Vec3(int(position.x), int(position.y) + y_offset, int(position.z))
+            # 適切なスペースが見つからなかった場合は、Noneを返す
+            return None
             
         except Exception as e:
             # エラーが発生した場合はデフォルト値を返す
@@ -300,7 +308,7 @@ class Skills:
                     # インベントリにクラフティングテーブルがあるか確認
                     if self.get_inventory_counts().get('crafting_table', 0) > 0:
                         # クラフティングテーブルを設置
-                        pos = self.get_nearest_free_space(1,6)
+                        pos = self.get_nearest_free_space(X_size=1,Z_size=1,distance=6)
                         await self.place_block('crafting_table', pos.x, pos.y, pos.z)
                         crafting_table = self.get_nearest_block('crafting_table', crafting_table_range)
                         if crafting_table:
@@ -1838,7 +1846,8 @@ class Skills:
             
             last_position = None
             stuck_time = 0
-            
+            temp_free_space = None
+
             while self.bot.pathfinder.isMoving():
                 mining = self.bot.pathfinder.isMining()
                 building = self.bot.pathfinder.isBuilding()
@@ -1858,12 +1867,24 @@ class Skills:
                     # 2秒以上同じ位置でスタックしている場合
                     if stuck_time >= 2:
                         self.bot.chat("スタックを検出しました。解消を試みます。")
-                        free_space = self.get_nearest_free_space(2)
+                        free_space = None
+                        distance = 100
+                        while free_space is None:
+                            free_space = self.get_nearest_free_space(X_size=1,Y_size=2,Z_size=1,distance=distance)
+                            if free_space:
+                                break
+                            distance += 100
                         
-                        # 一時的な目標地点に移動
-                        temp_goal = self.pathfinder.goals.GoalNear(free_space.x, free_space.y, free_space.z, 0)
-                        self.bot.pathfinder.setGoal(temp_goal, True)
-                        await asyncio.sleep(2)
+                        if temp_free_space and temp_free_space.x == free_space.x and temp_free_space.y == free_space.y and temp_free_space.z == free_space.z:
+                            # 一時的な移動で解消出来なければワープ
+                            self.bot.chat(f"/tp bot {free_space.x} {free_space.y} {free_space.z}")
+                            self.bot.pathfinder.setGoal(None, True)
+                        else:
+                            # 一時的な目標地点に移動
+                            temp_goal = self.pathfinder.goals.GoalNear(free_space.x, free_space.y, free_space.z, 0)
+                            self.bot.pathfinder.setGoal(temp_goal, True)
+                            temp_free_space = free_space
+                            await asyncio.sleep(2)
                         
                         # 元の目標地点に再設定
                         self.bot.pathfinder.setGoal(goal, True)
@@ -1944,7 +1965,7 @@ class Skills:
             # かまどを持っているか確認
             if self.get_inventory_counts().get('furnace', 0) > 0:
                 # かまどを設置
-                pos = self.get_nearest_free_space(1)
+                pos = self.get_nearest_free_space(X_size=1,Z_size=1,distance=15)
                 place_result = await self.place_block('furnace', pos.x, pos.y, pos.z)
                 if place_result:
                     furnace_block = self.get_nearest_block('furnace', 32)
