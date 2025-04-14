@@ -1773,6 +1773,7 @@ class Skills:
         指定された位置に移動します。
         現在位置と目標位置が十分に近い場合（min_distance以内）は移動をスキップします。
         移動中にスタックを検出した場合は、一時的な目標地点に移動して解消を試みます。
+        パスを取得できない場合は、目標位置に到達できる経路を生成できませんでしたというメッセージを返します。
         
         Args:
             x (float): 移動先のX座標
@@ -1832,22 +1833,26 @@ class Skills:
             movements.dontMineUnderFaillingBlock = dontMineUnderFaillingBlock
             self.bot.pathfinder.setMovements(movements)
             
-            # タイムアウトを設定して目標に向かう
-            # JavaScriptプロキシを通じた呼び出しでタイムアウトを明示的に設定
+            # パスを取得
+            path = self.bot.pathfinder.getPathTo(movements,goal)
+            if path.status != "success":
+                result["message"] = f"目標位置に到達できる経路を生成できませんでした: {path.status}"
+                result["error"] = "path_not_found"
+                return result
+            # 目標に向かう
             self.bot.pathfinder.setGoal(goal,True)
             await asyncio.sleep(1)
-            print(f"isMoving:{self.bot.pathfinder.isMoving()}")
             
             last_position = None
             stuck_time = 0
             
             while self.bot.pathfinder.isMoving():
                 mining = self.bot.pathfinder.isMining()
+                building = self.bot.pathfinder.isBuilding()
                 current_position = self.bot.entity.position
-                print(f"mining:{mining},position:{current_position}")
                 
                 # スタック検出ロジック
-                if not mining:
+                if not mining and not building:
                     if last_position and (
                         abs(current_position.x - last_position.x) < 0.01 and
                         abs(current_position.y - last_position.y) < 0.01 and
