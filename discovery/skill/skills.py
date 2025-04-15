@@ -1,6 +1,7 @@
 from javascript import require, On, Once, AsyncTask, once, off
 import asyncio
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 class Skills:
     def __init__(self, discovery):
@@ -17,6 +18,145 @@ class Skills:
         self.movements = discovery.movements
         self.mineflayer = discovery.mineflayer
         
+    async def get_surrounding_blocks(self, position=None, x_distance=10, y_distance=10, z_distance=10):
+        """
+        指定位置周囲のブロックを高性能に取得します。
+        
+        大きな範囲（8000ブロック以上）では自動的にスマートサンプリングを適用し、
+        近距離は密に、遠距離は疎にブロックを取得して処理効率を向上させます。
+        プログレスバーでリアルタイムに進捗を表示します。
+        
+        Args:
+            position (Vec3): 探索の中心位置（未指定の場合はBOTの位置）
+            x_distance (int): X方向の探索距離（デフォルト: 10）
+            y_distance (int): Y方向の探索距離（デフォルト: 10）
+            z_distance (int): Z方向の探索距離（デフォルト: 10）
+            
+        Returns:
+            list: 周囲のブロック情報のリスト（各要素は{'name': ブロック名, 'position': 位置}の辞書）
+            
+        動作の詳細:
+            - 小範囲: 全ブロックを取得
+            - 大範囲: 3つのゾーンに分けて最適化
+              - 近距離（半径5ブロック以内）: 全ブロック取得
+              - 中距離（半径5-10ブロック）: 2ブロックごとに取得
+              - 遠距離（半径10ブロック以上）: 3ブロックごとに取得
+            - バッチ処理でブロック取得を最適化（500ブロックずつ）
+            - 並列処理でフィルタリングを高速化
+        """
+        # デフォルト値の設定
+        if position is None:
+            position = self.bot.entity.position
+        
+        x_dist = x_distance
+        y_dist = y_distance
+        z_dist = z_distance
+        
+        # 距離に応じたサンプリングレートの設定
+        coords = []
+        total_vol = (2 * x_dist + 1) * (2 * y_dist + 1) * (2 * z_dist + 1)
+        
+        # 距離に応じたサンプリング（大きな範囲では間引きを行う）
+        if total_vol > 8000:  # 範囲が大きい場合
+            # 近距離は密に、遠距離は疎に
+            near_dist = 5  # 近距離の境界
+            
+            # 近距離ゾーン（完全取得）
+            for x in range(-min(near_dist, x_dist), min(near_dist, x_dist) + 1):
+                for y in range(-min(near_dist, y_dist), min(near_dist, y_dist) + 1):
+                    for z in range(-min(near_dist, z_dist), min(near_dist, z_dist) + 1):
+                        coords.append(position.offset(x, y, z))
+            
+            # 中間ゾーン（2ブロックごとに取得）
+            mid_dist = 10
+            if x_dist > near_dist or y_dist > near_dist or z_dist > near_dist:
+                for x in range(-min(mid_dist, x_dist), min(mid_dist, x_dist) + 1, 2):
+                    for y in range(-min(mid_dist, y_dist), min(mid_dist, y_dist) + 1, 2):
+                        for z in range(-min(mid_dist, z_dist), min(mid_dist, z_dist) + 1, 2):
+                            # 近距離ゾーンに含まれないブロックのみ追加
+                            if abs(x) > near_dist or abs(y) > near_dist or abs(z) > near_dist:
+                                coords.append(position.offset(x, y, z))
+            
+            # 遠距離ゾーン（3ブロックごとに取得）
+            if x_dist > mid_dist or y_dist > mid_dist or z_dist > mid_dist:
+                for x in range(-x_dist, x_dist + 1, 3):
+                    for y in range(-y_dist, y_dist + 1, 3):
+                        for z in range(-z_dist, z_dist + 1, 3):
+                            # 中間ゾーンに含まれないブロックのみ追加
+                            if abs(x) > mid_dist or abs(y) > mid_dist or abs(z) > mid_dist:
+                                coords.append(position.offset(x, y, z))
+            
+        else:
+            # 範囲が小さい場合は全ブロック取得
+            for x in range(-x_dist, x_dist + 1):
+                for y in range(-y_dist, y_dist + 1):
+                    for z in range(-z_dist, z_dist + 1):
+                        coords.append(position.offset(x, y, z))
+
+        # バッチサイズの決定（大量のリクエストを分割して処理）
+        batch_size = 500
+        all_blocks = []
+        
+        # プログレスバー表示
+        from tqdm import tqdm
+        print(f"ブロック取得開始: 合計{len(coords)}ブロック")
+        progress_obj = tqdm(range(0, len(coords), batch_size), unit="バッチ", desc="ブロック取得")
+        
+        # バッチ処理
+        for i in range(0, len(coords), batch_size):
+            batch_end = min(i + batch_size, len(coords))
+            batch = coords[i:batch_end]
+            
+            async def _get_block_async(position):
+                return self.bot.blockAt(position)
+            
+            # バッチ内のブロック取得を並列実行
+            batch_tasks = [_get_block_async(pos) for pos in batch]
+            batch_results = await asyncio.gather(*batch_tasks)
+            all_blocks.extend(batch_results)
+            
+            # 進捗表示
+            progress_obj.update(1)
+        
+        # プログレスバーの終了処理
+        progress_obj.close()
+        
+        try:
+            def chunks(lst, n):
+                """リストをn個のチャンクに分割"""
+                for i in range(0, len(lst), n):
+                    yield lst[i:i + n]
+            
+            def process_chunk(chunk):
+                return [{'name': block.name, 'position': block.position} 
+                        for block in chunk if block and block.type != 0]
+            
+            # CPUコア数に基づいて最適なチャンクサイズを計算
+            import os
+            cpu_count = os.cpu_count() or 4
+            chunk_size = max(100, len(all_blocks) // (cpu_count * 2))
+            block_chunks = list(chunks(all_blocks, chunk_size))
+            
+            # マルチスレッドでフィルタリングを実行
+            with ThreadPoolExecutor(max_workers=cpu_count) as executor:
+                filtered_chunks = list(executor.map(process_chunk, block_chunks))
+            
+            # 結果を結合
+            surrounding_blocks = []
+            for chunk in filtered_chunks:
+                surrounding_blocks.extend(chunk)
+                
+        except ImportError:
+            # 並列処理ライブラリがインポートできない場合は標準的なリスト内包表記を使用
+            surrounding_blocks = [
+                {'name': block.name, 'position': block.position}
+                for block in all_blocks
+                if block and block.type != 0
+            ]
+        
+        return surrounding_blocks
+    
+    
     def get_inventory_counts(self):
         """
         ボットのインベントリ内の各アイテムの数を辞書形式で返します。
@@ -3531,3 +3671,4 @@ class Skills:
             import traceback
             traceback.print_exc()
             return result
+
