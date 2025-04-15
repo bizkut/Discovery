@@ -27,10 +27,12 @@ class Discovery:
         self.collectblock = require("mineflayer-collectblock").plugin
         self.web_inventory = require("mineflayer-web-inventory")
         self.mineflayer_tool = require("mineflayer-tool").plugin
+        self.pvp = require("mineflayer-pvp").plugin
         self.bot.loadPlugin(self.pathfinder.pathfinder)
         self.bot.loadPlugin(self.collectblock)
         self.bot.loadPlugin(self.web_inventory)
         self.bot.loadPlugin(self.mineflayer_tool)
+        self.bot.loadPlugin(self.pvp)
         self.movements = self.pathfinder.Movements(self.bot, self.mcdata)
         
         # Web Inventoryを有効化
@@ -156,8 +158,11 @@ async def run_craft_example():
     while True:
         try:
             print(input("Enter: "))
-            #print(skills._get_nearby_entity_of_type("villager",60))
-            print(await skills.move_away(10))
+            results = await skills.get_surrounding_blocks(x_distance=3, y_distance=3, z_distance=4)
+            #skills.test()
+            #print(await skills.move_to_position(9,-60,-8,canDig=False))
+            #print(await skills.move_to_position(9,-60,-30,canDig=False))
+            #print(await skills.move_to_position(9,-60,-8,canDig=False))
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
