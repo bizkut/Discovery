@@ -134,8 +134,6 @@ class Discovery:
             return {
                 "active": True,
                 "version": self.bot.version,
-                "players": list(self.bot.players.keys()),
-                "player_count": len(self.bot.players),
                 "host": self.minecraft_host,
                 "port": self.minecraft_port
             }
