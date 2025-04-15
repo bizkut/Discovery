@@ -408,16 +408,16 @@ export async function defendSelf(bot, range=9) {
 
 export async function collectBlock(bot, blockType, num=1, exclude=null) {
     /**
-     * Collect one of the given block type.
-     * @param {MinecraftBot} bot, reference to the minecraft bot.
-     * @param {string} blockType, the type of block to collect.
-     * @param {number} num, the number of blocks to collect. Defaults to 1.
-     * @returns {Promise<boolean>} true if the block was collected, false if the block type was not found.
+     * 指定されたタイプのブロックを収集します。
+     * @param {MinecraftBot} bot Minecraftボットへの参照
+     * @param {string} blockType 収集するブロックのタイプ
+     * @param {number} num 収集するブロックの数。デフォルトは1
+     * @returns {Promise<boolean>} ブロックの収集に成功した場合はtrue、ブロックが見つからなかった場合はfalse
      * @example
      * await skills.collectBlock(bot, "oak_log");
      **/
     if (num < 1) {
-        log(bot, `Invalid number of blocks to collect: ${num}.`);
+        log(bot, `収集するブロック数が不正です: ${num}`);
         return false;
     }
     let blocktypes = [blockType];
@@ -447,16 +447,16 @@ export async function collectBlock(bot, blockType, num=1, exclude=null) {
 
         if (blocks.length === 0) {
             if (collected === 0)
-                log(bot, `No ${blockType} nearby to collect.`);
+                log(bot, `近くに${blockType}が見つかりません。`);
             else
-                log(bot, `No more ${blockType} nearby to collect.`);
+                log(bot, `これ以上${blockType}が見つかりません。`);
             break;
         }
         const block = blocks[0];
         await bot.tool.equipForBlock(block);
         const itemId = bot.heldItem ? bot.heldItem.type : null
         if (!block.canHarvest(itemId)) {
-            log(bot, `Don't have right tools to harvest ${blockType}.`);
+            log(bot, `${blockType}を採掘するための適切なツールがありません。`);
             return false;
         }
         try {
@@ -466,11 +466,11 @@ export async function collectBlock(bot, blockType, num=1, exclude=null) {
         }
         catch (err) {
             if (err.name === 'NoChests') {
-                log(bot, `Failed to collect ${blockType}: Inventory full, no place to deposit.`);
+                log(bot, `${blockType}の収集に失敗: インベントリが一杯で、保管場所がありません。`);
                 break;
             }
             else {
-                log(bot, `Failed to collect ${blockType}: ${err}.`);
+                log(bot, `${blockType}の収集に失敗: ${err}`);
                 continue;
             }
         }
@@ -478,7 +478,7 @@ export async function collectBlock(bot, blockType, num=1, exclude=null) {
         if (bot.interrupt_code)
             break;  
     }
-    log(bot, `Collected ${collected} ${blockType}.`);
+    log(bot, `${blockType}を${collected}個収集しました。`);
     return collected > 0;
 }
 
@@ -561,22 +561,23 @@ export async function breakBlockAt(bot, x, y, z) {
 
 export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dontCheat=false) {
     /**
-     * Place the given block type at the given position. It will build off from any adjacent blocks. Will fail if there is a block in the way or nothing to build off of.
-     * @param {MinecraftBot} bot, reference to the minecraft bot.
-     * @param {string} blockType, the type of block to place.
-     * @param {number} x, the x coordinate of the block to place.
-     * @param {number} y, the y coordinate of the block to place.
-     * @param {number} z, the z coordinate of the block to place.
-     * @param {string} placeOn, the preferred side of the block to place on. Can be 'top', 'bottom', 'north', 'south', 'east', 'west', or 'side'. Defaults to bottom. Will place on first available side if not possible.
-     * @param {boolean} dontCheat, overrides cheat mode to place the block normally. Defaults to false.
-     * @returns {Promise<boolean>} true if the block was placed, false otherwise.
+     * 指定された位置に指定されたブロックを設置します。隣接するブロックから設置を行います。
+     * ブロックが既に存在する場合や、設置できる場所がない場合は失敗します。
+     * @param {MinecraftBot} bot Minecraftボットへの参照
+     * @param {string} blockType 設置するブロックの種類
+     * @param {number} x ブロックを設置するX座標
+     * @param {number} y ブロックを設置するY座標 
+     * @param {number} z ブロックを設置するZ座標
+     * @param {string} placeOn 優先的に設置する面の方向。'top', 'bottom', 'north', 'south', 'east', 'west', 'side'から選択。デフォルトは'bottom'。指定した面に設置できない場合は最初に利用可能な面に設置します。
+     * @param {boolean} dontCheat チートモードでも通常の方法でブロックを設置するかどうか。デフォルトはfalse
+     * @returns {Promise<boolean>} ブロックの設置に成功した場合はtrue、失敗した場合はfalse
      * @example
      * let p = world.getPosition(bot);
      * await skills.placeBlock(bot, "oak_log", p.x + 2, p.y, p.x);
      * await skills.placeBlock(bot, "torch", p.x + 1, p.y, p.x, 'side');
      **/
     if (!mc.getBlockId(blockType)) {
-        log(bot, `Invalid block type: ${blockType}.`);
+        log(bot, `無効なブロックタイプです: ${blockType}`);
         return false;
     }
 
@@ -585,15 +586,15 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
         if (bot.restrict_to_inventory) {
             let block = bot.inventory.items().find(item => item.name === blockType);
             if (!block) {
-                log(bot, `Cannot place ${blockType}, you are restricted to your current inventory.`);
+                log(bot, `${blockType}を設置できません。現在のインベントリに制限されています。`);
                 return false;
             }
         }
 
-        // invert the facing direction
+        // 向きを反転
         let face = placeOn === 'north' ? 'south' : placeOn === 'south' ? 'north' : placeOn === 'east' ? 'west' : 'east';
         if (blockType.includes('torch') && placeOn !== 'bottom') {
-            // insert wall_ before torch
+            // torchの前にwall_を挿入
             blockType = blockType.replace('torch', 'wall_torch');
             if (placeOn !== 'side' && placeOn !== 'top') {
                 blockType += `[facing=${face}]`;
@@ -622,7 +623,7 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
             bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y+1) + ' ' + Math.floor(z) + ' ' + blockType + '[half=upper]');
         if (blockType.includes('bed'))
             bot.chat('/setblock ' + Math.floor(x) + ' ' + Math.floor(y) + ' ' + Math.floor(z-1) + ' ' + blockType + '[part=head]');
-        log(bot, `Used /setblock to place ${blockType} at ${target_dest}.`);
+        log(bot, `setblockコマンドを使用して${blockType}を${target_dest}に設置しました`);
         return true;
     }
 
@@ -632,30 +633,30 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
         item_name = "redstone";
     let block = bot.inventory.items().find(item => item.name === item_name);
     if (!block && bot.game.gameMode === 'creative' && !bot.restrict_to_inventory) {
-        await bot.creative.setInventorySlot(36, mc.makeItem(item_name, 1)); // 36 is first hotbar slot
+        await bot.creative.setInventorySlot(36, mc.makeItem(item_name, 1)); // 36は最初のホットバースロット
         block = bot.inventory.items().find(item => item.name === item_name);
     }
     if (!block) {
-        log(bot, `Don't have any ${blockType} to place.`);
+        log(bot, `設置する${blockType}を持っていません`);
         return false;
     }
 
     const targetBlock = bot.blockAt(target_dest);
     if (targetBlock.name === blockType) {
-        log(bot, `${blockType} already at ${targetBlock.position}.`);
+        log(bot, `${targetBlock.position}には既に${blockType}があります`);
         return false;
     }
     const empty_blocks = ['air', 'water', 'lava', 'grass', 'short_grass', 'tall_grass', 'snow', 'dead_bush', 'fern'];
     if (!empty_blocks.includes(targetBlock.name)) {
-        log(bot, `${blockType} in the way at ${targetBlock.position}.`);
+        log(bot, `${targetBlock.position}に${blockType}が邪魔になっています`);
         const removed = await breakBlockAt(bot, x, y, z);
         if (!removed) {
-            log(bot, `Cannot place ${blockType} at ${targetBlock.position}: block in the way.`);
+            log(bot, `${targetBlock.position}に${blockType}を設置できません: ブロックが邪魔です`);
             return false;
         }
-        await new Promise(resolve => setTimeout(resolve, 200)); // wait for block to break
+        await new Promise(resolve => setTimeout(resolve, 200)); // ブロックが破壊されるのを待つ
     }
-    // get the buildoffblock and facevec based on whichever adjacent block is not empty
+    // 空でない隣接ブロックに基づいてbuildOffBlockとfaceVecを取得
     let buildOffBlock = null;
     let faceVec = null;
     const dir_map = {
@@ -675,7 +676,7 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
     }
     else {
         dirs.push(dir_map['bottom']);
-        log(bot, `Unknown placeOn value "${placeOn}". Defaulting to bottom.`);
+        log(bot, `不明なplaceOn値"${placeOn}"です。bottomをデフォルトとして使用します。`);
     }
     dirs.push(...Object.values(dir_map).filter(d => !dirs.includes(d)));
 
@@ -683,12 +684,12 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
         const block = bot.blockAt(target_dest.plus(d));
         if (!empty_blocks.includes(block.name)) {
             buildOffBlock = block;
-            faceVec = new Vec3(-d.x, -d.y, -d.z); // invert
+            faceVec = new Vec3(-d.x, -d.y, -d.z); // 反転
             break;
         }
     }
     if (!buildOffBlock) {
-        log(bot, `Cannot place ${blockType} at ${targetBlock.position}: nothing to place on.`);
+        log(bot, `${targetBlock.position}に${blockType}を設置できません: 設置できる場所がありません`);
         return false;
     }
 
@@ -696,14 +697,14 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
     const pos_above = pos.plus(Vec3(0,1,0));
     const dont_move_for = ['torch', 'redstone_torch', 'redstone_wire', 'lever', 'button', 'rail', 'detector_rail', 'powered_rail', 'activator_rail', 'tripwire_hook', 'tripwire', 'water_bucket'];
     if (!dont_move_for.includes(blockType) && (pos.distanceTo(targetBlock.position) < 1 || pos_above.distanceTo(targetBlock.position) < 1)) {
-        // too close
+        // 近すぎる
         let goal = new pf.goals.GoalNear(targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 2);
         let inverted_goal = new pf.goals.GoalInvert(goal);
         bot.pathfinder.setMovements(new pf.Movements(bot));
         await bot.pathfinder.goto(inverted_goal);
     }
     if (bot.entity.position.distanceTo(targetBlock.position) > 4.5) {
-        // too far
+        // 遠すぎる
         let pos = targetBlock.position;
         let movements = new pf.Movements(bot);
         bot.pathfinder.setMovements(movements);
@@ -713,14 +714,14 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
     await bot.equip(block, 'hand');
     await bot.lookAt(buildOffBlock.position);
 
-    // will throw error if an entity is in the way, and sometimes even if the block was placed
+    // エンティティが邪魔な場合やブロックが設置された場合でもエラーをスローすることがあります
     try {
         await bot.placeBlock(buildOffBlock, faceVec);
-        log(bot, `Placed ${blockType} at ${target_dest}.`);
+        log(bot, `${target_dest}に${blockType}を設置しました`);
         await new Promise(resolve => setTimeout(resolve, 200));
         return true;
     } catch (err) {
-        log(bot, `Failed to place ${blockType} at ${target_dest}.`);
+        log(bot, `${target_dest}に${blockType}の設置に失敗しました`);
         return false;
     }
 }
