@@ -128,7 +128,7 @@ class Skills:
                     yield lst[i:i + n]
             
             def process_chunk(chunk):
-                return [{'name': block.name, 'position': block.position} 
+                return [{'name': block.name, 'position': {'x': block.position.x, 'y': block.position.y, 'z': block.position.z}} 
                         for block in chunk if block and block.type != 0]
             
             # CPUコア数に基づいて最適なチャンクサイズを計算
@@ -149,7 +149,7 @@ class Skills:
         except ImportError:
             # 並列処理ライブラリがインポートできない場合は標準的なリスト内包表記を使用
             surrounding_blocks = [
-                {'name': block.name, 'position': block.position}
+                {'name': block.name, 'position': {'x': block.position.x, 'y': block.position.y, 'z': block.position.z}}
                 for block in all_blocks
                 if block and block.type != 0
             ]
@@ -543,7 +543,7 @@ class Skills:
             traceback.print_exc()
             return result
         
-    async def place_block(self, block_type, x, y, z, place_on='bottom', dont_cheat=False):
+    async def place_block(self, block_type, x, y, z, place_on='bottom'):
         """
         指定された座標にブロックを設置します。隣接するブロックから設置します。
         設置場所にブロックがある場合や、設置できる場所がない場合は失敗します。
@@ -600,82 +600,6 @@ class Skills:
         Vec3 = require('vec3')
         target_dest = Vec3(int(x), int(y), int(z))
         
-        # チートモードでの処理
-        if hasattr(self.bot.modes, 'isOn') and self.bot.modes.isOn('cheat') and not dont_cheat:
-            # インベントリ制限がある場合はチェック
-            if hasattr(self.bot, 'restrict_to_inventory') and self.bot.restrict_to_inventory:
-                has_block = False
-                for item in self.bot.inventory.items():
-                    if item.name == block_type:
-                        has_block = True
-                        break
-                        
-                if not has_block:
-                    result["message"] = f"{block_type}をインベントリに持っていないため設置できません"
-                    result["error"] = "item_not_in_inventory"
-                    self.bot.chat(result["message"])
-                    return result
-            
-            try:
-                # 向きを反転
-                face_dict = {
-                    'north': 'south',
-                    'south': 'north',
-                    'east': 'west',
-                    'west': 'east',
-                    'top': 'bottom',
-                    'bottom': 'top'
-                }
-                
-                face = face_dict.get(place_on, place_on)
-                block_command = block_type
-                
-                # 特殊なブロックの処理
-                if 'torch' in block_type and place_on != 'bottom':
-                    # 松明を壁に設置する場合
-                    block_command = block_type.replace('torch', 'wall_torch')
-                    if place_on != 'side' and place_on != 'top':
-                        block_command += f"[facing={face}]"
-                        
-                elif block_type.endswith('button') or block_type == 'lever':
-                    # ボタンやレバーの設置
-                    if place_on == 'top':
-                        block_command += "[face=ceiling]"
-                    elif place_on == 'bottom':
-                        block_command += "[face=floor]"
-                    else:
-                        block_command += f"[facing={face}]"
-                        
-                elif block_type in ['ladder', 'repeater', 'comparator']:
-                    # はしご、リピーター、コンパレーター
-                    block_command += f"[facing={face}]"
-                    
-                elif 'stairs' in block_type:
-                    # 階段
-                    block_command += f"[facing={face}]"
-                
-                # setblockコマンドを実行
-                command = f'/setblock {int(x)} {int(y)} {int(z)} {block_command}'
-                self.bot.chat(command)
-                
-                # ドアや特殊ブロックの追加処理
-                if 'door' in block_type:
-                    self.bot.chat(f'/setblock {int(x)} {int(y)+1} {int(z)} {block_type}[half=upper]')
-                elif 'bed' in block_type:
-                    self.bot.chat(f'/setblock {int(x)} {int(y)} {int(z)-1} {block_type}[part=head]')
-                    
-                result["message"] = f"/setblockを使用して{block_type}を座標({target_dest})に設置しました"
-                result["success"] = True
-                self.bot.chat(result["message"])
-                return result
-                
-            except Exception as e:
-                result["message"] = f"チートモードでのブロック設置中にエラーが発生しました: {str(e)}"
-                result["error"] = "cheat_mode_error"
-                self.bot.chat(result["message"])
-                return result
-                
-        # 通常の設置処理
         try:
             # アイテム名の修正（一部のブロックは設置時に名前が変わる）
             item_name = block_type
@@ -1181,7 +1105,7 @@ class Skills:
             self.bot.chat(result["message"])
             return result
 
-    async def view_chest(self):
+    async def view_chest(self,maxDistance=32):
         """
         最も近いチェストの中身を表示します。
         
@@ -1208,7 +1132,11 @@ class Skills:
         
         try:
             # 最も近いチェストを探す
-            chest = self.get_nearest_block("chest", 32)
+            chest = self.bot.findBlocks({
+                'matching':self._get_item_id('chest'),
+                'maxDistance': maxDistance,
+                'count': 1
+            })
             if not chest:
                 result["message"] = "近くにチェストが見つかりませんでした。"
                 self.bot.chat(result["message"])
@@ -1956,14 +1884,6 @@ class Skills:
             return result
         
         try:
-            # チートモードの場合はテレポート
-            if hasattr(self.bot.modes, 'isOn') and self.bot.modes.isOn('cheat'):
-                self.bot.chat(f'/tp @s {x} {y} {z}')
-                result["success"] = True
-                result["message"] = f"チートモードで{x}, {y}, {z}にテレポートしました。"
-                result["position"] = {"x": x, "y": y, "z": z}
-                return result
-            
             # 目標位置を設定
             goal = self.pathfinder.goals.GoalNear(x, y, z, min_distance)
             
@@ -3052,22 +2972,6 @@ class Skills:
             self.bot.chat(result["message"])
             return result
             
-        # チートモードの場合は/setblockを使用
-        if hasattr(self.bot.modes, 'isOn') and self.bot.modes.isOn('cheat'):
-            try:
-                # /setblockコマンドで空気に置き換え
-                command = f'/setblock {int(x)} {int(y)} {int(z)} air'
-                self.bot.chat(command)
-                result["message"] = f"/setblockを使用して{block.name}を座標({x}, {y}, {z})で破壊しました"
-                result["success"] = True
-                self.bot.chat(result["message"])
-                return result
-            except Exception as e:
-                result["message"] = f"チートモードでのブロック破壊中にエラーが発生しました: {str(e)}"
-                result["error"] = "cheat_mode_error"
-                self.bot.chat(result["message"])
-                return result
-            
         # ブロックまでの距離を確認
         if self.bot.entity.position.distanceTo(block.position) > 4.5:
             try:
@@ -3267,27 +3171,6 @@ class Skills:
             
             # 対象のブロックを取得
             block = self.bot.blockAt(Vec3(x, y, z))
-            
-            # チートモードの場合
-            if hasattr(self.bot.modes, 'isOn') and self.bot.modes.isOn('cheat'):
-                # 種の名前から「_seed」や「_seeds」を取り除く
-                if seed_type:
-                    to_remove = ['_seed', '_seeds']
-                    for remove in to_remove:
-                        if seed_type.endswith(remove):
-                            seed_type = seed_type.replace(remove, '')
-                    
-                    # 農地と種を設置
-                    await self.place_block('farmland', x, y, z)
-                    await self.place_block(seed_type, x, y+1, z)
-                    
-                    result["success"] = True
-                    result["tilled"] = True
-                    result["planted"] = True
-                    result["seed_type"] = seed_type
-                    result["message"] = f"チートモードで座標({x}, {y}, {z})に農地と{seed_type}を設置しました。"
-                    self.bot.chat(result["message"])
-                    return result
             
             # 対象のブロックが耕せるかチェック
             if block.name not in ['grass_block', 'dirt', 'farmland']:
