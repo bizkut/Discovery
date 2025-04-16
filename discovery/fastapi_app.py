@@ -8,6 +8,11 @@ from discovery import Discovery
 from contextlib import asynccontextmanager
 import math # math.fabs を使うためにインポート
 from javascript import require # Vec3 を使う可能性のため (skills.pyの依存関係)
+import inspect # メソッドとdocstring取得のため
+import io # 標準出力/エラー出力キャプチャのため
+import contextlib # redirect_stdout/stderrのため
+import traceback # トレースバック取得のため
+import textwrap # インデント調整のため
 
 # Discoveryインスタンスの初期化
 discovery = Discovery()
@@ -177,9 +182,129 @@ async def get_bot_status():
 
     return final_result
 
+# Skillsクラスの関数リストを取得するエンドポイント
+@app.get("/skills/list", tags=["skills"], summary="Skillsクラスで利用可能な関数（メソッド）の名前、説明、非同期フラグのリストを取得")
+async def get_skills_list():
+    global skills # lifespanで初期化されたskillsインスタンスを使用
+    if skills is None:
+        raise HTTPException(status_code=503, detail="Skillsが初期化されていません")
+
+    skill_list = []
+    # inspect.getmembersでskillsオブジェクトのメソッドを取得
+    for name, method in inspect.getmembers(skills, inspect.ismethod):
+        # アンダースコアで始まらない公開メソッドのみを対象とする
+        if not name.startswith('_'):
+            # docstringを取得し、整形
+            docstring = inspect.cleandoc(method.__doc__) if method.__doc__ else "説明がありません。"
+            # メソッドが非同期関数かどうかをチェック
+            is_async = inspect.iscoroutinefunction(method)
+
+            skill_list.append({
+                "name": name,
+                "description": docstring,
+                "is_async": is_async # 非同期フラグを追加
+            })
+
+    # 名前順にソートして返す
+    return sorted(skill_list, key=lambda x: x['name'])
+
+# --- Pydantic モデル定義 ---
+class CodeExecutionRequest(BaseModel):
+    code: str
+
+class TeleportRequest(BaseModel):
+    position_x: float
+    position_y: float
+    position_z: float
+
+# --- Pythonコード実行エンドポイント ---
+@app.post("/execute/python_code", tags=["execute"], summary="Pythonコード文字列を実行します（非同期対応）【セキュリティ注意】")
+async def execute_python_code(request: CodeExecutionRequest):
+    global skills, discovery, bot
+    # botインスタンスを discovery から取得してグローバルスコープに設定 (関数内でアクセス可能にするため)
+    # lifespanで初期化されていることを前提とする
+    if discovery and hasattr(discovery, 'bot'):
+        bot = discovery.bot
+    else:
+        # discovery または bot が未初期化の場合のエラーハンドリング
+        raise HTTPException(status_code=503, detail="Bot is not initialized")
+
+    output_buffer = io.StringIO()
+    error_buffer = io.StringIO()
+
+    # 動的に生成する非同期ラッパー関数の名前
+    dynamic_async_func_name = "__dynamic_exec_async_code__"
+
+    # LLMが生成したコードを適切にインデントする
+    # textwrap.indent を使って各行の先頭にスペースを追加
+    indented_user_code = textwrap.indent(request.code, '    ') # 4スペースでインデント
+
+    # 非同期ラッパー関数のコード文字列を作成
+    # skills, discovery, bot, asyncio を関数内で利用可能にする
+    # グローバル変数としてアクセスする想定
+    wrapper_code = f"""
+import asyncio # ラッパー関数内で asyncio を利用可能にする
+
+async def {dynamic_async_func_name}():
+    # グローバル変数 skills, discovery, bot を参照
+    global skills, discovery, bot
+    # --- User Code Start ---
+{indented_user_code}
+    # --- User Code End ---
+
+"""
+    # exec のための実行コンテキスト (グローバルスコープ)
+    # ラッパー関数が参照できるように、現在のグローバル変数を含める
+    exec_globals = globals().copy()
+    # 必要に応じて追加の変数を渡すことも可能
+    # exec_globals.update({"some_other_var": some_value})
+
+    try:
+        # ラッパー関数を定義する
+        # exec_globals を渡すことで、ラッパー関数が skills 等のグローバル変数を参照できる
+        exec(wrapper_code, exec_globals)
+
+        # 定義された非同期関数オブジェクトを取得
+        async_func_to_run = exec_globals.get(dynamic_async_func_name)
+
+        if async_func_to_run and inspect.iscoroutinefunction(async_func_to_run):
+            # 標準出力と標準エラーをキャプチャしながら、動的に定義した非同期関数を実行
+            with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(error_buffer):
+                await async_func_to_run()
+        else:
+            # 関数が正しく定義されなかった場合のエラー
+            # 同期コードとして実行するフォールバックも考えられるが、ここではエラーとする
+            raise RuntimeError(f"Failed to define the internal async wrapper function '{dynamic_async_func_name}'.")
+
+        # 実行結果を取得
+        output = output_buffer.getvalue()
+        error_output = error_buffer.getvalue()
+
+        return {
+            "success": True,
+            "output": output,
+            "error_output": error_output
+        }
+
+    except Exception as e:
+        # exec または await 中のエラーをキャプチャ
+        error_message = str(e)
+        tb_str = traceback.format_exc()
+        # エラー発生前のエラー出力も取得しておく
+        error_output_before_exception = error_buffer.getvalue()
+
+        return {
+            "success": False,
+            "error": error_message,
+            "traceback": tb_str,
+            # エラー発生前の標準エラー出力も返す
+            "error_output": error_output_before_exception
+        }
+
+# --- テレポートエンドポイント (/bot/teleport) ---
 @app.post("/bot/teleport", tags=["bot"])
-async def teleport_bot(position_x: float, position_y: float, position_z: float):
-    discovery.bot.chat(f"/tp bot {position_x} {position_y} {position_z}")
+async def teleport_bot(request: TeleportRequest):
+    discovery.bot.chat(f"/tp bot {request.position_x} {request.position_y} {request.position_z}")
     return {"message": "ボットを転送しました"}
 
 # サーバー起動用コード
