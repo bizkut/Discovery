@@ -3,6 +3,10 @@ javascript
 python-dotenv
 # minecraft_launcher_lib
 
+# fastapi
+fastapi
+uvicorn
+
 # LangFlow
 deep-translator
 pydantic>=2.0.0
