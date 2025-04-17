@@ -13,10 +13,13 @@ import io # 標準出力/エラー出力キャプチャのため
 import contextlib # redirect_stdout/stderrのため
 import traceback # トレースバック取得のため
 import textwrap # インデント調整のため
+import os # osモジュールをインポート
+from dotenv import load_dotenv # python-dotenvからload_dotenvをインポート
 
 # Discoveryインスタンスの初期化
 discovery = Discovery()
 skills = None
+current_goal: Optional[str] = None # ★ 追加: 現在のゴールを格納する変数
 
 # lifespanコンテキストマネージャを定義
 @asynccontextmanager
@@ -307,6 +310,30 @@ async def teleport_bot(request: TeleportRequest):
     discovery.bot.chat(f"/tp bot {request.position_x} {request.position_y} {request.position_z}")
     return {"message": "ボットを転送しました"}
 
+# --- ゴール設定/取得エンドポイント ---
+class GoalRequest(BaseModel):
+    goal: str
+
+# ボットの現在の目標（ゴール）を設定します
+@app.post("/bot/goal", tags=["bot"], summary="ボットの現在の目標（ゴール）を設定します")
+async def set_bot_goal(request: GoalRequest):
+    global current_goal
+    current_goal = request.goal
+    discovery.bot.chat(f"目標が 「{current_goal}」 に設定されました")
+    return {"message": f"目標を設定しました: {current_goal}"}
+
+# ボットに現在設定されている目標（ゴール）を取得します
+@app.get("/bot/goal", tags=["bot"], summary="ボットに現在設定されている目標（ゴール）を取得します")
+async def get_bot_goal():
+    global current_goal
+    if current_goal is None:
+        # raise HTTPException(status_code=404, detail="目標はまだ設定されていません")
+        # 404ではなく、Noneを返す仕様に変更（他のAPIに合わせる）
+        return {"goal": None}
+    return {"goal": current_goal}
+
 # サーバー起動用コード
 if __name__ == "__main__":
-    uvicorn.run("fastapi_app:app", host="0.0.0.0", port=8000, reload=True) 
+    load_dotenv() # .envファイルから環境変数を読み込む
+    port = int(os.getenv("PORT", 8000)) # 環境変数 PORT を読み込む、なければデフォルト8000
+    uvicorn.run("fastapi_app:app", host="0.0.0.0", port=port, reload=True) 
