@@ -4,6 +4,7 @@ import os
 import asyncio
 from skill.skills import Skills
 import webbrowser
+import sys
 
 class Discovery:
     def __init__(self):
@@ -180,7 +181,6 @@ async def run_craft_example():
             traceback.print_exc()
 
 if __name__ == "__main__":
-    import sys
     
     # サーバー接続チェックだけを行うモード
     if len(sys.argv) > 1 and sys.argv[1] == "--check-server":
