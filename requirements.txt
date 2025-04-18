@@ -10,3 +10,4 @@ uvicorn
 # LangFlow
 deep-translator
 pydantic>=2.0.0
+playwright

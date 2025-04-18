@@ -1,60 +1,42 @@
 FROM python:3.11-slim
 
-# 必要な開発ツールとPythonヘッダーをインストール
+# ── ① 共通ツール ＋ Node.js ───────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    curl \
-    gnupg \
-    build-essential \
-    git \
-    python3-dev \
-    python3-pip \
-    python3.11-dev \
-    iputils-ping \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && apt-get clean \
+    curl gnupg build-essential git \
+    python3-dev python3-pip python3.11-dev iputils-ping
+
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs
+
+# ── ② Playwright が要求するシステムライブラリ ────────────────────
+# ドキュメント: https://playwright.dev/python/docs/faq#install-deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libglib2.0-0 libnss3 libnspr4 libdbus-1-3 \
+        libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
+        libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+        libgbm1 libxkbcommon0 libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# バージョン確認
-RUN node --version && npm --version
+# ── ③ Python パッケージ ──────────────────────────────────────────
+RUN pip install -U pip uv \
+ && uv pip install --system langflow
 
-# uvのインストールとlangflowのインストール
-RUN pip install uv && \
-    uv pip install langflow --system
-
-# Pythonの依存関係をインストール
 WORKDIR /app
 COPY requirements.txt README.md ./
+RUN pip install -r requirements.txt
 
-# プロジェクトの依存関係をインストール
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+# ── ④ Playwright ブラウザ (Chromium) ─────────────────────────────
+# 依存ライブラリはすでに入れたので --with-deps は不要
+RUN pip install playwright && playwright install chromium
 
-# ── Playwright ブラウザ & 依存ライブラリ ──
-RUN playwright install --with-deps chromium
-
-# プロジェクトのソースコードをコピー
-WORKDIR /app
-COPY . .
-
-# langflow_chatの依存関係をインストール
-WORKDIR /app/langflow_chat
-RUN uv pip install --system -r requirements.txt
-
-
-# mineflayerプロジェクトのセットアップ
 WORKDIR /app/mineflayer
-RUN npm install mineflayer && \
-    npm install --save mineflayer-collectblock && \
-    npm install --save mineflayer-pathfinder && \
-    npm install --save mineflayer-web-inventory && \
-    npm install --save mineflayer-tool && \
-    npm install --save mineflayer-collectblock && \
-    npm install --save mineflayer-pvp && \
-    npm install --save prismarine-viewer
+RUN npm install \
+        mineflayer \
+        mineflayer-collectblock \
+        mineflayer-pathfinder \
+        mineflayer-web-inventory \
+        mineflayer-tool \
+        mineflayer-pvp \
+        prismarine-viewer
 
-# 作業ディレクトリをルートに戻す
 WORKDIR /app
-
-# Langflowのポートを公開
-EXPOSE 7860
