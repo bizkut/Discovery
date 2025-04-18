@@ -46,12 +46,11 @@ RUN npm install mineflayer && \
     npm install --save mineflayer-web-inventory && \
     npm install --save mineflayer-tool && \
     npm install --save mineflayer-collectblock && \
-    npm install --save mineflayer-pvp
+    npm install --save mineflayer-pvp && \
+    npm install --save prismarine-viewer
 
 # 作業ディレクトリをルートに戻す
 WORKDIR /app
 
 # Langflowのポートを公開
 EXPOSE 7860
-# ChatUIのポートも公開
-EXPOSE 7850
