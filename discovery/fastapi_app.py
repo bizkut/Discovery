@@ -178,6 +178,7 @@ async def get_bot_status():
         "time_of_day": bot_time,
         "health": bot_health,
         "hunger": bot_food,
+        "bot_position": f"x = {center_block.position.x}, y = {center_block.position.y}, z = {center_block.position.z}",
         "nearby_entities": nearby_entities_info,
         "inventory": inventory_info,
         **classified_blocks # ブロック分類結果を展開して結合
