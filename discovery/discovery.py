@@ -10,6 +10,8 @@ class Discovery:
         load_dotenv()
         self.load_env()
         self.mineflayer = require("mineflayer")
+        require('canvas') # エラーが出るので追加
+        self.viewer_module = require('prismarine-viewer')
 
         self.bot = None
         self.mcdata = None
@@ -20,8 +22,11 @@ class Discovery:
         self.minecraft_port = os.getenv("MINECRAFT_PORT")
         self.minecraft_version = os.getenv("MINECRAFT_VERSION")
         self.web_inventory_port = os.getenv("WEB_INVENTORY_PORT")
+        self.prismarine_viewer_port = os.getenv("PRISMARINE_VIEWER_PORT", 3000)
 
     def load_plugins(self):
+        # Node.jsのモジュールパスを設定（mineflayerディレクトリのnode_modulesを参照）
+        os.environ['NODE_PATH'] = "/workspaces/Voyager/mineflayer/node_modules"
         # pathfinder
         self.pathfinder = require("mineflayer-pathfinder")
         self.collectblock = require("mineflayer-collectblock").plugin
@@ -66,13 +71,21 @@ class Discovery:
             print("サーバー接続が終了しました")
             self.is_connected = False
         
+        # ビューアーを開く
+        def open_viewer():
+            self.viewer_module.mineflayer(self.bot, {
+                "firstPerson": True,
+                "port": int(self.prismarine_viewer_port)})
+            webbrowser.open(f'http://localhost:{self.prismarine_viewer_port}')
+        
         # イベントリスナーを設定
         self.bot.once('spawn', handle_spawn)
         self.bot.on('error', handle_error)
         self.bot.on('end', handle_end)
         self.mcdata = require("minecraft-data")(self.bot.version)
         self.load_plugins()
-    
+        open_viewer()
+
     async def check_server_active(self, timeout=10):
         """
         サーバーがアクティブかどうかを確認します
