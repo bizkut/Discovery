@@ -24,11 +24,14 @@ RUN pip install uv && \
 
 # Pythonの依存関係をインストール
 WORKDIR /app
-COPY requirements.txt setup.py README.md ./
+COPY requirements.txt README.md ./
 
 # プロジェクトの依存関係をインストール
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
+
+# ── Playwright ブラウザ & 依存ライブラリ ──
+RUN playwright install --with-deps chromium
 
 # プロジェクトのソースコードをコピー
 WORKDIR /app
@@ -37,6 +40,7 @@ COPY . .
 # langflow_chatの依存関係をインストール
 WORKDIR /app/langflow_chat
 RUN uv pip install --system -r requirements.txt
+
 
 # mineflayerプロジェクトのセットアップ
 WORKDIR /app/mineflayer
