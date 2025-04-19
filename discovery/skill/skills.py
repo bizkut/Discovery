@@ -185,7 +185,7 @@ class Skills:
         指定されたブロックタイプの最も近いブロックを返します。
         
         Args:
-            block_type (str): 探すブロックタイプ
+            block_type (str): 探すブロックタイプ (例: "oak_log")
             max_distance (int): 探索する最大距離
             
         Returns:
@@ -194,67 +194,28 @@ class Skills:
         Example:
             >>> get_nearest_block('oak_log')
             Block {
-                type: 40,
-                metadata: 2,
-                light: 0,
-                skyLight: 15,
-                biome: {
-                    color: 0,
-                    height: null,
-                    name: '',
-                    rainfall: 0,
-                    temperature: 0,
-                    id: 8
-                },
-                position: Vec3 { x: 18, y: 77, z: 11 },
-                stateId: 119,
-                computedStates: {},
-                name: 'oak_log',
-                hardness: 2,
-                displayName: 'Oak Log',
-                shapes: [ [ 0, 0, 0, 1, 1, 1 ] ],
-                boundingBox: 'block',
-                transparent: false,
-                diggable: true,
-                material: 'mineable/axe',
-                harvestTools: undefined,
-                drops: [ 104 ],
-                _properties: { axis: 'z' },
-                isWaterlogged: undefined,
-                entity: undefined,
-                painting: undefined
-                }
-                Block {
-                type: 40,
-                metadata: 2,
-                light: 0,
-                skyLight: 15,
-                biome: {
-                    color: 0,
-                    height: null,
-                    name: '',
-                    rainfall: 0,
-                    temperature: 0,
-                    id: 8
-                },
-                position: Vec3 { x: 18, y: 77, z: 11 },
-                stateId: 119,
-                computedStates: {},
-                name: 'oak_log',
-                hardness: 2,
-                displayName: 'Oak Log',
-                shapes: [ [ 0, 0, 0, 1, 1, 1 ] ],
-                boundingBox: 'block',
-                transparent: false,
-                diggable: true,
-                material: 'mineable/axe',
-                harvestTools: undefined,
-                drops: [ 104 ],
-                _properties: { axis: 'z' },
-                isWaterlogged: undefined,
-                entity: undefined,
-                painting: undefined
-                }
+            type: 40,
+            metadata: 1,
+            light: 0,
+            skyLight: 15,
+            biome: {
+                color: 0,
+                height: null,
+                name: '',
+                rainfall: 0,
+                temperature: 0,
+                id: 1
+            },
+            position: Vec3 { x: -83, y: 73, z: 52 },
+            name: 'oak_log',
+            displayName: 'Oak Log',
+            shapes: [ [ 0, 0, 0, 1, 1, 1 ] ],
+            boundingBox: 'block',
+            transparent: false,
+            diggable: true,
+            harvestTools: undefined,
+            drops: [ 104 ]
+            }
         """
         try:
             # ブロックのIDを取得
@@ -392,28 +353,6 @@ class Skills:
                 - exception (str, optional): 例外が発生した場合の例外メッセージ
                 - item (str): 作成しようとしたアイテム名
                 - count (int): 作成しようとした数量
-        
-        エラーコード:
-            - recipe_not_found: レシピが見つからない
-            - crafting_table_required: クラフティングテーブルが必要だが所持していない
-            - insufficient_materials: 材料が不足している
-            - movement_failed: クラフティングテーブルまで移動できない
-            - crafting_error: クラフト実行中にエラー発生
-            - unexpected_error: その他の予期せぬエラー
-        
-        使用例:
-            ```python
-            # 棒を4本作成
-            result = await skills.craft_recipe("stick", 4)
-            if result["success"]:
-                print(f"作成成功: {result['message']}")
-            else:
-                print(f"作成失敗: {result['message']}")
-                print(f"エラー: {result.get('error', 'unknown')}")
-            
-            # クラフティングテーブルを作成
-            result = await skills.craft_recipe("crafting_table")
-            ```
         """
         result = {
             "success": False,
@@ -563,13 +502,6 @@ class Skills:
                 - position (dict): 設置を試みた位置 {x, y, z}
                 - block_type (str): 設置しようとしたブロックタイプ
                 - error (str, optional): エラーがある場合のエラーコード
-                
-        Example:
-            >>> result = await skills.place_block("oak_planks", 100, 64, 100)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -827,13 +759,6 @@ class Skills:
                 - success (bool): 装備に成功した場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
                 - item (str): 装備しようとしたアイテム名
-                
-        Example:
-            >>> result = await skills.equip("iron_pickaxe")
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -898,13 +823,6 @@ class Skills:
                 - message (str): 結果メッセージ
                 - item (str): 捨てようとしたアイテム名
                 - count (int): 捨てたアイテムの数
-                
-        Example:
-            >>> result = await skills.discard("dirt", 10)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -968,13 +886,6 @@ class Skills:
                 - message (str): 結果メッセージ
                 - item (str): チェストに入れようとしたアイテム名
                 - count (int): チェストに入れたアイテムの数
-                
-        Example:
-            >>> result = await skills.put_in_chest("stone", 64)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1043,13 +954,6 @@ class Skills:
                 - message (str): 結果メッセージ
                 - item (str): チェストから取り出そうとしたアイテム名
                 - count (int): チェストから取り出したアイテムの数
-                
-        Example:
-            >>> result = await skills.take_from_chest("oak_log")
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1114,16 +1018,6 @@ class Skills:
                 - success (bool): チェストを表示できた場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
                 - items (list, optional): チェスト内のアイテムリスト（成功時のみ）
-                
-        Example:
-            >>> result = await skills.view_chest()
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>>     if "items" in result:
-            >>>         for item in result["items"]:
-            >>>             print(f"{item['count']}個の{item['name']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1196,12 +1090,6 @@ class Skills:
         
         Args:
             item_name (str): 食べる/飲むアイテムの名前。デフォルトは空文字列で、その場合は手に持っているアイテムを消費します。
-            
-        Returns:
-            dict: 結果を含む辞書
-                - success (bool): アイテムを消費できた場合はTrue、失敗した場合はFalse
-                - message (str): 結果メッセージ
-                - item (str, optional): 消費したアイテム名（成功時のみ）
         """
         result = {
             "success": False,
@@ -1263,13 +1151,6 @@ class Skills:
                 - message (str): 結果メッセージ
                 - block_type (str): 探したブロックタイプ
                 - position (dict, optional): 見つかったブロックの位置 {x, y, z}（成功時のみ）
-                
-        Example:
-            >>> result = await skills.go_to_nearest_block("oak_log")
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1334,13 +1215,6 @@ class Skills:
                 - entity_type (str): 探したエンティティタイプ
                 - position (dict, optional): エンティティの位置 {x, y, z}（成功時のみ）
                 - distance (float, optional): 元の位置からエンティティまでの距離（成功時のみ）
-                
-        Example:
-            >>> result = await skills.go_to_nearest_entity("villager")
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1399,13 +1273,6 @@ class Skills:
                 - success (bool): ベッドで寝ることができた場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
                 - bed_position (dict, optional): ベッドの位置 {x, y, z}（成功時のみ）
-                
-        Example:
-            >>> result = await skills.go_to_bed()
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1479,13 +1346,6 @@ class Skills:
                 - message (str): 結果メッセージ
                 - start_position (dict): 開始位置 {x, y, z}
                 - end_position (dict, optional): 移動後の位置 {x, y, z}（成功時のみ）
-                
-        Example:
-            >>> result = await skills.move_away(8)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -1852,12 +1712,6 @@ class Skills:
             canDig (bool): ブロックを掘るかどうか。デフォルトはTrue
             dontcreateflow (bool): 液体ブロックに接触するブロックを掘らないかどうか。デフォルトはTrue
             dontMineUnderFaillingBlock (bool):砂などの落下ブロックの下で掘るのを許可するか。デフォルトはTrue
-            
-        Returns:
-            dict: 結果を含む辞書
-                - success (bool): 移動に成功した場合はTrue、失敗した場合はFalse
-                - message (str): 結果メッセージ
-                - position (dict): 現在位置 {x, y, z}
         """
         # 現在位置と目標位置を取得
         current_pos = self.bot.entity.position
@@ -1987,21 +1841,6 @@ class Skills:
                 - smelted (int): 精錬したアイテムの数
                 - item_name (str): 精錬したアイテム名
                 - error (str, optional): エラーがある場合のエラーコード
-            
-        エラーコード:
-            - not_smeltable: 精錬できないアイテム
-            - no_furnace: かまどがない
-            - already_smelting: 既に別のアイテムを精錬中
-            - insufficient_items: 精錬するアイテムが足りない
-            - no_fuel: 燃料がない
-            - furnace_error: かまど操作中のエラー
-            
-        Example:
-            >>> result = await skills.smelt_item("raw_iron", 5)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -2429,9 +2268,6 @@ class Skills:
                 - success (bool): 攻撃に成功した場合はTrue、失敗した場合はFalse 
                 - message (str): 結果メッセージ
                 - mob_type (str): 攻撃したモブのタイプ
-            
-        Examples:
-            result = await skills.attack_nearest("zombie", True)
         """
         result = {
             "success": False,
@@ -2472,10 +2308,6 @@ class Skills:
                 - message (str): 結果メッセージ
                 - entity_name (str): 攻撃したエンティティの名前
                 - killed (bool, optional): エンティティを倒したかどうか
-            
-        Examples:
-            entity = nearby_entities[0]
-            result = await skills.attack_entity(entity)
         """
         result = {
             "success": False,
@@ -2564,9 +2396,6 @@ class Skills:
                 - success (bool): 防衛に成功した場合はTrue、敵がいない場合はFalse
                 - message (str): 結果メッセージ
                 - enemies_killed (int): 倒した敵の数
-            
-        Examples:
-            result = await skills.defend_self()
         """
         result = {
             "success": False,
@@ -2655,9 +2484,6 @@ class Skills:
                 - success (bool): アイテムを拾った場合はTrue
                 - message (str): 結果メッセージ
                 - picked_up (int): 拾ったアイテムの数
-                
-        Example:
-            >>> result = await skills.pickup_nearby_items()
         """
         result = {
             "success": False,
@@ -2896,7 +2722,7 @@ class Skills:
         エンティティが敵対的かどうかを判断します。
         
         Args:
-            entity: 判断するエンティティ
+            entity: 判断するエンティティ(例: 'zombie')
             
         Returns:
             bool: 敵対的な場合はTrue
@@ -2931,13 +2757,6 @@ class Skills:
                 - position (dict): 破壊を試みた位置 {x, y, z}
                 - block_name (str, optional): 破壊したブロックの名前
                 - error (str, optional): エラーがある場合のエラーコード
-                
-        Example:
-            >>> result = await skills.break_block_at(100, 64, 100)
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -3038,13 +2857,6 @@ class Skills:
                 - success (bool): ドアの使用に成功した場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
                 - door_position (dict, optional): 使用したドアの位置 {x, y, z}（成功時のみ）
-                
-        Example:
-            >>> result = await skills.use_door()
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -3143,15 +2955,6 @@ class Skills:
                 - tilled (bool): 地面を耕したかどうか
                 - planted (bool, optional): 種を植えたかどうか（seed_typeが指定された場合）
                 - seed_type (str, optional): 植えた種の種類（seed_typeが指定された場合）
-                
-        Example:
-            >>> # 地面を耕して小麦の種を植える
-            >>> position = bot.entity.position
-            >>> result = await skills.till_and_sow(position.x, position.y - 1, position.z, "wheat_seeds")
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -3327,14 +3130,6 @@ class Skills:
                 - message (str): 結果メッセージ
                 - position (dict, optional): 汲み上げた液体の位置 {x, y, z}
                 - liquid_type (str): 汲み上げた液体の種類
-                
-        Example:
-            >>> # 近くの水をバケツで汲み上げる
-            >>> result = await skills.collect_liquid('water')
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
@@ -3458,14 +3253,6 @@ class Skills:
                 - message (str): 結果メッセージ
                 - position (dict): 液体を配置した位置 {x, y, z}
                 - liquid_type (str): 配置した液体の種類
-                
-        Example:
-            >>> # 指定座標に水を配置する
-            >>> result = await skills.place_liquid(10, 65, 20, 'water')
-            >>> if result["success"]:
-            >>>     print(f"成功: {result['message']}")
-            >>> else:
-            >>>     print(f"失敗: {result['message']}")
         """
         result = {
             "success": False,
