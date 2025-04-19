@@ -15,6 +15,7 @@ import traceback # トレースバック取得のため
 import textwrap # インデント調整のため
 import os # osモジュールをインポート
 from dotenv import load_dotenv # python-dotenvからload_dotenvをインポート
+import ast # ast モジュールをインポート
 
 # Discoveryインスタンスの初期化
 discovery = Discovery()
@@ -212,6 +213,86 @@ async def get_skills_list():
 
     # 名前順にソートして返す
     return sorted(skill_list, key=lambda x: x['name'])
+
+# 新しいエンドポイント: 特定のスキル関数のソースコードを取得
+@app.get("/skills/code/{skill_name}", tags=["skills"], summary="指定されたスキル関数のソースコードを取得 (docstring除外)")
+async def get_skill_code(skill_name: str = Path(..., title="取得したいスキル関数の名前")):
+    global skills
+    if skills is None:
+        raise HTTPException(status_code=503, detail="Skillsが初期化されていません")
+
+    # skill_nameに対応するメソッドを取得
+    try:
+        method = getattr(skills, skill_name)
+    except AttributeError:
+        raise HTTPException(status_code=404, detail=f"スキル関数 '{skill_name}' が見つかりません")
+
+    # メソッドが呼び出し可能で、アンダースコアで始まらないことを確認
+    if not callable(method) or skill_name.startswith('_'):
+        raise HTTPException(status_code=404, detail=f"スキル関数 '{skill_name}' が見つかりません、またはアクセスできません")
+
+    # --- Docstringを除去するTransformer ---
+    class DocstringRemover(ast.NodeTransformer):
+        def _remove_docstring(self, node):
+            if not node.body:
+                return
+            # 関数/クラス定義内の最初の式がdocstringであるか確認
+            if isinstance(node.body[0], ast.Expr):
+                if isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str):
+                    # Docstring (Python 3.8+)
+                    node.body.pop(0)
+                elif isinstance(node.body[0].value, ast.Str):
+                    # Docstring (Python 3.7 or earlier)
+                    node.body.pop(0)
+
+        def visit_FunctionDef(self, node):
+            self._remove_docstring(node)
+            self.generic_visit(node)
+            return node
+
+        def visit_AsyncFunctionDef(self, node):
+            self._remove_docstring(node)
+            self.generic_visit(node)
+            return node
+
+        def visit_ClassDef(self, node): # クラス定義のdocstringも除去する場合
+            self._remove_docstring(node)
+            self.generic_visit(node)
+            return node
+    # --- ここまで追加/変更 ---
+
+    # メソッドのソースコードを取得し、docstringを除去
+    try:
+        source_code = inspect.getsource(method)
+        # ソースコードのインデントを除去 (ASTパース前にdedentが必要)
+        dedented_source_code = textwrap.dedent(source_code)
+
+        # ASTにパース
+        tree = ast.parse(dedented_source_code)
+
+        # Docstringを削除するTransformerを適用
+        transformer = DocstringRemover()
+        new_tree = transformer.visit(tree)
+        ast.fix_missing_locations(new_tree) # Location情報を修正
+
+        # ASTをソースコード文字列に戻す (Python 3.9+)
+        # ast.unparse はインデントを再構築する
+        code_without_docstring = ast.unparse(new_tree)
+
+        return {"skill_name": skill_name, "source_code": code_without_docstring}
+
+    except (TypeError, OSError) as e:
+        # ソースコードが取得できない場合
+        raise HTTPException(status_code=500, detail=f"スキル関数 '{skill_name}' のソースコードを取得できませんでした: {e}")
+    except SyntaxError as e:
+        # AST パース失敗時のエラーハンドリング
+        raise HTTPException(status_code=500, detail=f"スキル関数 '{skill_name}' のソースコードの解析に失敗しました: {e}")
+    except AttributeError as e:
+        # ast.unparse がない場合のエラー (Python 3.9未満)
+        if "'module' object has no attribute 'unparse'" in str(e):
+             raise HTTPException(status_code=501, detail="この機能にはPython 3.9以上が必要です (ast.unparse)。")
+        else:
+             raise HTTPException(status_code=500, detail=f"予期せぬエラーが発生しました: {e}")
 
 # --- Pydantic モデル定義 ---
 class CodeExecutionRequest(BaseModel):
