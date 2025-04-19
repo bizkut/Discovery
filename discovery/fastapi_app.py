@@ -35,7 +35,8 @@ async def lifespan(app: FastAPI):
     
     # アプリケーション終了時の処理
     # 必要に応じてボットの切断処理などを実装
-    pass
+    if discovery:
+        discovery.disconnect_bot()
 
 # FastAPIインスタンスを作成
 app = FastAPI(

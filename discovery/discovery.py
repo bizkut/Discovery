@@ -155,6 +155,18 @@ class Discovery:
             print(f"サーバー情報取得エラー: {e}")
             return {"active": False, "error": str(e)}
 
+    def disconnect_bot(self):
+        """ボットをサーバーから切断します"""
+        if self.bot and self.is_connected:
+            try:
+                self.bot.quit() # または self.bot.end() を試す
+                print("ボットがサーバーから切断されました。")
+            except Exception as e:
+                print(f"ボットの切断中にエラーが発生しました: {e}")
+            finally:
+                self.is_connected = False
+                self.bot = None # 必要に応じてbotインスタンスもクリア
+
 async def run_craft_example():
     """Skillsクラスのcraft_recipeメソッドを使用する例"""
     # Discoveryインスタンスを作成し、Skillsを初期化
