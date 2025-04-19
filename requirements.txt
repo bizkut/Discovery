@@ -11,3 +11,4 @@ uvicorn
 deep-translator
 pydantic>=2.0.0
 playwright
+b2sdk
