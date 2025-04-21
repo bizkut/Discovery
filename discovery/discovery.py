@@ -109,11 +109,6 @@ class Discovery:
             await asyncio.sleep(0.5)
             
         return True
-    
-    def bot_move(self, x, y, z):
-        self.bot.pathfinder.setMovements(self.movements)
-        self.bot.pathfinder.setGoal(self.pathfinder.goals.GoalNear(x, y, z, 1))
-        self.bot.chat("移動します")
         
     def create_skills(self):
         """Skillsクラスのインスタンスを作成して返します"""
@@ -204,7 +199,6 @@ if __name__ == "__main__":
                 print("✅ Minecraftサーバーはアクティブです！")
                 # サーバーのバージョン情報表示
                 print(f"サーバーバージョン: {discovery.bot.version}")
-                print(f"プレイヤー数: {len(discovery.bot.players)}")
             else:
                 print("❌ Minecraftサーバーに接続できませんでした")
             return result
