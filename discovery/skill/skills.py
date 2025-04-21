@@ -41,7 +41,7 @@ class Skills:
             - 並列処理でフィルタリングを高速化
         """
 
-        self.bot.chat(f"{x_distance}x{y_distance}x{z_distance}の範囲でブロックを取得します。")
+        #self.bot.chat(f"{x_distance}x{y_distance}x{z_distance}の範囲でブロックを取得します。")
         # デフォルト値の設定
         if position is None:
             position = self.bot.entity.position
