@@ -87,8 +87,8 @@ async def get_bot_status():
         center_block = discovery.bot.blockAt(bot_pos_raw)
         bottom_block = discovery.bot.blockAt(bot_pos_raw.offset(0, -1, 0))
         bot_pos = center_block.position.offset(0, 1, 0)
-        bot_biome_name = bottom_block.biome.name
-
+        bot_biome_id = discovery.bot.world.getBiome(bot_pos)
+        bot_biome_name = discovery.mcdata.biomes[str(bot_biome_id)]['name']
         bot_x = bot_pos.x
         bot_z = bot_pos.z
 
@@ -259,7 +259,6 @@ async def get_skill_code(skill_name: str = Path(..., title="取得したいス�
             self._remove_docstring(node)
             self.generic_visit(node)
             return node
-    # --- ここまで追加/変更 ---
 
     # メソッドのソースコードを取得し、docstringを除去
     try:
