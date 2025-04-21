@@ -20,11 +20,7 @@ class Skills:
         
     async def get_surrounding_blocks(self, position=None, x_distance=10, y_distance=10, z_distance=10):
         """
-        指定位置周囲のブロックを高性能に取得します。
-        
-        大きな範囲（8000ブロック以上）では自動的にスマートサンプリングを適用し、
-        近距離は密に、遠距離は疎にブロックを取得して処理効率を向上させます。
-        プログレスバーでリアルタイムに進捗を表示します。
+        指定位置周囲のブロックを取得します。広い範囲でブロック情報を取得する際に有効です。
         
         Args:
             position (Vec3): 探索の中心位置（未指定の場合はBOTの位置）
@@ -44,6 +40,8 @@ class Skills:
             - バッチ処理でブロック取得を最適化（500ブロックずつ）
             - 並列処理でフィルタリングを高速化
         """
+
+        self.bot.chat(f"{x_distance}x{y_distance}x{z_distance}の範囲でブロックを取得します。")
         # デフォルト値の設定
         if position is None:
             position = self.bot.entity.position
@@ -159,7 +157,7 @@ class Skills:
     
     def get_inventory_counts(self):
         """
-        ボットのインベントリ内の各アイテムの数を辞書形式で返します。
+        ボットのインベントリ内の各アイテムの名前と数を辞書形式で返します。
 
         Returns:
             dict: キーがアイテム名、値がその数量の辞書
@@ -168,6 +166,7 @@ class Skills:
             >>> get_inventory_counts()
             {'birch_planks': 1, 'dirt': 1}
         """
+        self.bot.chat("インベントリ内のアイテムを取得します。")
         inventory_counts = {}
         
         # インベントリ内の全アイテムをループ
@@ -177,15 +176,15 @@ class Skills:
                 inventory_counts[item.name] += item.count
             else:
                 inventory_counts[item.name] = item.count
-                
+        
         return inventory_counts
     
-    def get_nearest_block(self, block_type, max_distance=64):
+    def get_nearest_block(self, block_name, max_distance=1000):
         """
-        指定されたブロックタイプの最も近いブロックを返します。
+        BOTの周囲で指定されたブロック名のブロックを検索し、最も近いブロックを返します。
         
         Args:
-            block_type (str): 探すブロックタイプ (例: "oak_log")
+            block_name (str): 探すブロック名 (例: "oak_log")
             max_distance (int): 探索する最大距離
             
         Returns:
@@ -217,13 +216,14 @@ class Skills:
             drops: [ 104 ]
             }
         """
+        self.bot.chat(f"{block_name}のブロックを取得します。")
         try:
             # ブロックのIDを取得
             block_id = None
-            if hasattr(self.bot.registry, 'blocksByName') and block_type in self.bot.registry.blocksByName:
-                block_id = self.bot.registry.blocksByName[block_type].id
+            if hasattr(self.bot.registry, 'blocksByName') and block_name in self.bot.registry.blocksByName:
+                block_id = self.bot.registry.blocksByName[block_name].id
             else:
-                print(f"ブロック '{block_type}' がレジストリに見つかりません")
+                print(f"get_nearest_blockを実行しましたが、ブロック '{block_name}' はminecraftのブロック名では見つかりません")
                 return None
                 
             # ブロックを検索
