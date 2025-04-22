@@ -1,0 +1,13 @@
+
+template: |
+  ## 入力情報
+
+  ### 現在実行すべきタスク (上位プランナーから)
+  {current_task}
+
+  ### Botの現在の状況
+  {minecraft_data}
+
+input_variables:
+  - current_task
+  - minecraft_data
