@@ -5,7 +5,8 @@ import asyncio
 from skill.skills import Skills
 import webbrowser
 import sys
-
+import math
+import inspect
 class Discovery:
     def __init__(self):
         load_dotenv()
@@ -110,11 +111,32 @@ class Discovery:
             
         return True
         
-    def create_skills(self):
-        """Skillsクラスのインスタンスを作成して返します"""
-        if not self.bot:
-            self.bot_join()
-        return Skills(self)
+    async def check_server_and_join(self, timeout=15):
+        """
+        サーバー接続状態を確認し、接続できていればボットを召喚します
+        
+        Args:
+            timeout (int): 接続確認のタイムアウト秒数
+            
+        Returns:
+            bool: 接続とボット召喚が成功したらTrue、失敗したらFalse
+        """
+        print("Minecraftサーバーの接続状態を確認しています...")
+        
+        # サーバー接続状態確認
+        is_active = await self.check_server_active(timeout=timeout)
+        
+        if is_active:
+            print(f"✅ Minecraftサーバーは稼働中です！(バージョン: {self.bot.version})")
+            
+            # スキルのインスタンスを作成
+            self.skills = Skills(self)
+            print("ボットが正常に召喚されました")
+            return True
+        else:
+            print("❌ Minecraftサーバーに接続できませんでした")
+            print("サーバーが起動しているか確認してください")
+            return False
 
     def is_server_active(self):
         """
@@ -162,12 +184,148 @@ class Discovery:
                 self.is_connected = False
                 self.bot = None # 必要に応じてbotインスタンスもクリア
 
+    async def get_bot_status(self):
+        """ボットの状態と周辺情報（バイオーム、時間、体力、空腹度、エンティティ、インベントリ、ブロック分類）を取得"""
+        if not self.bot or not self.skills:
+            print("エラー: ボットまたはスキルが初期化されていません。")
+            return None
+            
+        try:
+            # --- ボットの基本情報を取得 ---
+            bot_entity = self.bot.entity
+            bot_pos_raw = bot_entity.position # Y座標はエンティティ基準
+            bot_health = self.bot.health
+            bot_food = self.bot.food
+            bot_time = self.bot.time.timeOfDay
+
+            # ボットがいるブロックとバイオームを取得
+            center_block = self.bot.blockAt(bot_pos_raw)
+            #bottom_block = self.discovery.bot.blockAt(bot_pos_raw.offset(0, -1, 0))
+            bot_pos = center_block.position.offset(0, 1, 0)
+            bot_biome_id = self.bot.world.getBiome(bot_pos)
+            bot_biome_name = self.mcdata.biomes[str(bot_biome_id)]['name']
+            bot_x = bot_pos.x
+            bot_z = bot_pos.z
+            bot_y = bot_pos.y # y座標も追加
+
+            # --- 周囲のブロックを取得 & 分類 ---
+            blocks = await self.skills.get_surrounding_blocks(
+                position=bot_pos, # スキルの引数名に合わせる
+                x_distance=3,
+                y_distance=2,
+                z_distance=3
+            )
+
+            # ブロック名をグループごとに一時的に格納
+            temp_grouped_block_names = {"group1": [], "group2": [], "group3": [], "group4": [], "group0": []}
+
+            if blocks:
+                for block in blocks:
+                    block_pos_dict = block.get('position')
+                    block_name = block.get('name')
+                    if not isinstance(block_pos_dict, dict) or block_name is None:
+                        continue
+
+                    block_x = block_pos_dict.get('x')
+                    block_z = block_pos_dict.get('z')
+                    if not isinstance(block_x, (int, float)) or not isinstance(block_z, (int, float)):
+                        continue
+
+                    dx = block_x - bot_x
+                    dz = block_z - bot_z
+
+                    if math.fabs(dx) < 1e-6 and math.fabs(dz) < 1e-6:
+                        temp_grouped_block_names["group0"].append(block_name)
+                    elif dz > 1e-6 and math.fabs(dx) <= dz + 1e-6:
+                        temp_grouped_block_names["group1"].append(block_name)
+                    elif dx > 1e-6 and math.fabs(dz) <= dx + 1e-6:
+                        temp_grouped_block_names["group2"].append(block_name)
+                    elif dz < -1e-6 and math.fabs(dx) <= math.fabs(dz) + 1e-6:
+                        temp_grouped_block_names["group3"].append(block_name)
+                    elif dx < -1e-6 and math.fabs(dz) <= math.fabs(dx) + 1e-6:
+                        temp_grouped_block_names["group4"].append(block_name)
+
+            # ブロック分類結果（重複除去とソート）
+            classified_blocks = {
+                "front_blocks": sorted(list(set(temp_grouped_block_names["group1"]))),
+                "right_blocks": sorted(list(set(temp_grouped_block_names["group2"]))),
+                "back_blocks": sorted(list(set(temp_grouped_block_names["group3"]))),
+                "left_blocks": sorted(list(set(temp_grouped_block_names["group4"]))),
+                "center_blocks": sorted(list(set(temp_grouped_block_names["group0"])))
+            }
+
+            # --- 近くのエンティティ情報を取得 ---
+            nearby_entities_info = []
+            # _get_nearby_entities は同期メソッドの可能性あり
+            nearby_entities_raw = self.skills._get_nearby_entities(max_distance=16) # 範囲は適宜調整
+            if nearby_entities_raw:
+                for entity in nearby_entities_raw:
+                    # 有効なエンティティ情報のみ抽出
+                    if hasattr(entity, 'name') and hasattr(entity, 'position') and entity.position:
+                        nearby_entities_info.append({
+                            "name": entity.name,
+                            "position": {
+                                "x": round(entity.position.x, 1), # 小数点以下第一位で四捨五入
+                                "y": round(entity.position.y, 1), # 小数点以下第一位で四捨五入
+                                "z": round(entity.position.z, 1)  # 小数点以下第一位で四捨五入
+                            }
+                        })
+
+            # --- インベントリ情報を取得 ---
+            inventory_info = {}
+            # get_inventory_counts は同期メソッド
+            inventory_info = self.skills.get_inventory_counts()
+
+            # --- 最終的なレスポンスを作成 ---
+            final_result = {
+                "biome": bot_biome_name,
+                "time_of_day": bot_time,
+                "health": bot_health,
+                "hunger": bot_food,
+                "bot_position": f"x={bot_x:.1f}, y={bot_y:.1f}, z={bot_z:.1f}",
+                "nearby_entities": nearby_entities_info,
+                "inventory": inventory_info,
+                **classified_blocks # ブロック分類結果を展開して結合
+            }
+            return final_result
+
+        except Exception as e:
+            print(f"ボットステータスの取得中にエラーが発生しました: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        
+    async def get_skills_list(self):
+        """Skillsクラスで利用可能な関数（メソッド）の名前、説明、非同期フラグのリストを取得"""
+        if self.skills is None:
+            print("エラー: Skillsが初期化されていません")
+            return [] # 空のリストを返す
+
+        skill_list = []
+        # inspect.getmembersでskillsオブジェクトのメソッドを取得
+        for name, method in inspect.getmembers(self.skills, inspect.ismethod):
+            # アンダースコアで始まらない公開メソッドのみを対象とする
+            if not name.startswith('_'):
+                # docstringを取得し、整形
+                docstring = inspect.cleandoc(method.__doc__) if method.__doc__ else "説明がありません。"
+                # メソッドが非同期関数かどうかをチェック
+                is_async = inspect.iscoroutinefunction(method)
+
+                skill_list.append({
+                    "name": name,
+                    "description": docstring,
+                    "is_async": is_async # 非同期フラグを追加
+                })
+
+        # 名前順にソートして返す
+        return sorted(skill_list, key=lambda x: x['name'])
+
 async def run_craft_example():
     """Skillsクラスのcraft_recipeメソッドを使用する例"""
     # Discoveryインスタンスを作成し、Skillsを初期化
     discovery = Discovery()
-    discovery.bot_join()
-    skills = discovery.create_skills()
+    await discovery.check_server_and_join()
+    skills = discovery.skills
     # サーバーがアクティブか確認
     server_active = await discovery.check_server_active(timeout=15)
     if not server_active:
@@ -177,11 +335,7 @@ async def run_craft_example():
     while True:
         try:
             print(input("Enter: "))
-            results = await skills.get_surrounding_blocks(x_distance=3, y_distance=3, z_distance=4)
-            #skills.test()
-            #print(await skills.move_to_position(9,-60,-8,canDig=False))
-            #print(await skills.move_to_position(9,-60,-30,canDig=False))
-            #print(await skills.move_to_position(9,-60,-8,canDig=False))
+            print(await discovery.get_bot_status())
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
