@@ -1,11 +1,6 @@
 from discovery import Discovery
 from autoggen import Auto_gen
 import asyncio
-import math
-import inspect
-import textwrap
-import io # 標準出力/エラー出力キャプチャのため
-import contextlib # redirect_stdout/stderrのため
 import traceback # トレースバック取得のため
 
 class DiscoveryMain:
@@ -23,7 +18,7 @@ class DiscoveryMain:
         if not server_active:
             print("サーバーに接続できないため、終了します")
             return
-        await self.auto_gen.main(message="ダイヤを10個集めるために、行動を生成してください")
+        await self.auto_gen.main(message="貴方の最終目標は、ダイヤを3個集めることです。そのために、行動を生成し、行動し、評価し、改善を繰り返して、最終的にダイヤを3個集めてください。")
 
         # 終了時の処理（tryの外で実行）
         if self.discovery:
