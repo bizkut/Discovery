@@ -185,7 +185,7 @@ class Skills:
         
         Args:
             block_name (str): 探すブロック名 (例: "oak_log")
-            max_distance (int): 探索する最大距離
+            max_distance (int): 探索する最大ブロック数(デフォルトは1000)
             
         Returns:
             Block: 最も近いブロック、見つからない場合はNone
@@ -1672,7 +1672,7 @@ class Skills:
             print(f"ブロック名取得エラー: {e}")
             return []
         
-    async def move_to_position(self, x, y, z, min_distance=2, canDig=True,dontcreateflow=True,dontMineUnderFaillingBlock=True):
+    async def move_to_position(self, x, y, z, min_distance=2, canDig=True,dontcreateflow=True,dontMineUnderFaillingBlock=True,dontMoveUnderLiquid=True):
         """
         指定された位置に移動します。
         現在位置と目標位置が十分に近い場合（min_distance以内）は移動をスキップします。
@@ -1687,6 +1687,7 @@ class Skills:
             canDig (bool): ブロックを掘るかどうか。デフォルトはTrue
             dontcreateflow (bool): 液体ブロックに接触するブロックを掘らないかどうか。デフォルトはTrue
             dontMineUnderFaillingBlock (bool):砂などの落下ブロックの下で掘るのを許可するか。デフォルトはTrue
+            dontMoveUnderLiquid (bool):指定された位置が、液体ブロックの場合、エラーを返すかどうか。デフォルトはTrue
         
         Returns:
             dict: 移動結果を含む辞書
@@ -1721,6 +1722,13 @@ class Skills:
             result["message"] = f"既に目標位置 {x}, {y}, {z} の近く（{distance_to_target:.2f}ブロック）にいます。移動をスキップします。"
             self.bot.chat(result["message"])
             return result
+        
+        if dontMoveUnderLiquid:
+            if self.bot.blockAt(x, y, z).name == 'water' or self.bot.blockAt(x, y, z).name == 'lava':
+                result["message"] = f"目標位置 {x}, {y}, {z} は液体ブロックです。溺れる・焼け死ぬ可能性があるため、移動を中止します。"
+                result["error"] = "liquid_block"
+                self.bot.chat(result["message"])
+                return result
         
         try:
             # 目標位置を設定
