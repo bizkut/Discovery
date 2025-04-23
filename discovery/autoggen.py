@@ -54,6 +54,7 @@ class Auto_gen:
             あなたの主な役割は、ユーザーが設定した最終目標と、Minecraft Botの現在の状況を分析し、目標達成のための中〜高レベルのタスク計画を立案することです。
             中〜高レベルのタスクとは、個々のアクション（例：「1ブロック前に進む」「自座標よりy+10のブロック掘る」）ではなく、より抽象的な目標（例：「木材を10個集める」「作業台を作成する」「鉄のピッケルを作成する」）をリストアップし、目標達成のためのに絶対に必要な工程を立案することです。
             更に、設定した目標を達成するために必要なツールなどがある場合、そのツールを作成するタスクも含めて立案してください。
+            また、提案された全ての行動が実行可能と判断した場合は、'タスク完了' というメッセージを出力してください。
             """
         )
         self.ActionDecomposerAgent = AssistantAgent(
@@ -66,18 +67,79 @@ class Auto_gen:
             また、Minecraft Botの現在の状態を考慮し、安全な行動を提案してください。
             """
         )
-        self.SkillExecutorAgent = AssistantAgent(
-            name="SkillExecutorAgent",
-            tools=[self.get_skills_list_tool],
+        self.ProcessReviewerAgent = AssistantAgent(
+            name="ProcessReviewerAgent",
+            tools=[self.get_skills_list_tool, self.get_skill_code_tool],
             model_client=model_client,
-            description="ActionDecomposerAgentが生成した行動ステップを実行するエージェント。",
+            description="ActionDecomposerAgentが生成した行動ステップを実行するエージェント。提案された行動がPythonコードで実行可能なスキルか判断し、必要であればスキルのコード情報、引数、動作を確認します。",
             system_message="""
             あなたは、提案された行動が、MineCraftBotにて実行可能な関数（メソッド）であるかを判断し、実行ができない場合、行動ステップまたは目標の修正や改善を提案するエージェントです。
-            具体的には、ツールから得られた実行可能関数のリストをもとに、提案された行動が実行可能な関数であるかを判断てください。また、提案された全ての行動が実行可能と判断した場合は、'タスク完了' というメッセージを出力してください。
+            具体的には、ツールから得られた実行可能関数のリストをもとに、提案された行動が実行可能な関数であるかを判断てください。
+            もし判断に迷う場合や、より詳細な情報が必要な場合は、get_skill_code ツールを使用して関数のソースコードを取得し、引数や動作を確認してください。
             """
         )
+        self.CodeGeneratorAgent = AssistantAgent(
+            name="CodeGeneratorAgent",
+            tools=[self.get_skills_list_tool, self.get_skill_code_tool],
+            model_client=model_client,
+            description="提案された行動ステップから、スキル関数を元に、Pythonのコードを生成するエージェント。",
+            system_message="""
+            あなたは、Minecraft Bot の操作を自動化するための Python コードを生成する専門のAIエージェントです。
+            あなたの主な役割は、提案されたタスクや行動ステップを分析し、`discovery.skills` オブジェクトで利用可能なメソッドを組み合わせて、それらを実行する Python コードを生成することです。
 
-        
+            考慮事項:
+            - 利用可能なスキル: `get_skills_list` ツールでスキルの一覧と説明を確認できます。必要であれば `get_skill_code` ツールで特定のスキルの詳細なソースコードを確認してください。
+            - 非同期処理: スキルが非同期 (`Async: Yes`) の場合は、コード内で `await` を使用して呼び出す必要があります。
+            - コードの実行環境: 生成されたコードは、`skills`、`bot`、`discovery` オブジェクトが利用可能な環境で実行されます。これらのオブジェクトのメソッドを適切に利用してください。
+            - 出力形式: 生成した Python コードは、必ず Markdown のコードブロック (` ```python ... ``` `) で囲んでください。コード以外の説明は最小限にしてください。
+            """
+        )
+        self.SkillExecutorAgent = AssistantAgent(
+            name="SkillExecutorAgent",
+            tools=[self.execute_python_code_tool],
+            model_client=model_client,
+            description="CodeGeneratorAgentが生成したコードを実行するエージェント。",
+            system_message="""
+            あなたは、Minecraft Bot を操作するための Python コードを実行し、その結果を報告する AI エージェントです。
+            あなたの主な役割は、提供された Python コード文字列を `execute_python_code` ツールを使用して実行することです。
+
+            手順:
+            1.  **コード実行:** 提供された Python コードを `execute_python_code` ツールで実行します。コードは `discovery.skills` や `bot` オブジェクトを利用することを想定しています。
+            2.  **結果分析:** ツールの実行結果 (成功/失敗、標準出力、標準エラー出力、トレースバック) を注意深く確認します。
+            3.  **成功報告:** コードの実行が成功した場合 (ツールの結果が "Code execution successful." で始まる場合)、その旨と、必要に応じて標準出力の内容を簡潔に報告してください。最終的な目標達成につながる場合は、その旨も言及してください。
+            4.  **失敗報告:** コードの実行が失敗した場合 (ツールの結果が "Code execution failed." で始まる場合)、以下の情報を**詳細に**報告してください。
+                *   発生したエラーメッセージ (`Error: ...`)
+                *   トレースバック (`Traceback: ...`)
+                *   エラー発生前の標準エラー出力 (`Standard Error Output before exception: ...`)
+                *   可能であれば、エラーの原因についての簡単な考察や、コードのどの部分が問題かについての推測。
+            5.  **次のアクション:** 実行が失敗した場合、エラー情報を元に `CodeGeneratorAgent` や他の関連エージェントにコードの修正を依頼するか、計画の見直しを提案してください。
+
+            常に明確かつ正確な情報を提供し、問題解決に貢献してください。
+            """
+        )
+        self.CodeDebuggerAgent = AssistantAgent(
+            name="CodeDebuggerAgent",
+            tools=[self.get_skill_code_tool],
+            model_client=model_client,
+            description="Pythonコード実行時のエラーを分析し、デバッグと修正案の提案を行います。",
+            system_message="""
+            あなたは、Python コードのデバッグと問題解決を専門とする高度な AI アシスタントです。
+            コード実行エージェントから報告された Python コード実行時のエラー情報 (エラーメッセージ、トレースバック、実行されたコード) を詳細に分析し、問題の原因を特定し、具体的な修正案を提案してください。
+
+            分析プロセス:
+            1. 提供されたエラーメッセージとトレースバックを注意深く読み解きます。
+            2. エラーが発生したコード箇所と、その周辺のロジックを確認します。
+            3. 考えられるエラー原因を特定します (例: 変数名の誤り、型の不一致、API/スキルの誤用、前提条件の不足、論理的な誤りなど)。
+
+            提案内容:
+            - エラーの原因として最も可能性が高いものを明確に指摘します。
+            - 問題を解決するための具体的なコード修正案を、修正箇所が明確にわかるように提示します。修正案は CodeGeneratorAgent が解釈しやすい形式であるべきです。
+            - 修正案が複数考えられる場合は、それぞれのメリット・デメリットを説明します。
+            - 情報が不足している場合や、原因の特定が困難な場合は、追加で確認すべき情報や試すべきデバッグ手順を提案します。
+
+            あなたの分析と提案は、問題解決の鍵となります。正確かつ建設的なフィードバックを提供してください。
+            """
+        )
     async def main(self,message:str) -> None:
         termination = TextMentionTermination("タスク完了")
         team = RoundRobinGroupChat(
@@ -85,7 +147,10 @@ class Auto_gen:
                 self.BotStatusAgent,
                 self.MasterPlannerAgent,
                 self.ActionDecomposerAgent,
-                self.SkillExecutorAgent
+                self.ProcessReviewerAgent,
+                self.CodeGeneratorAgent,
+                self.SkillExecutorAgent,
+                self.CodeDebuggerAgent
             ],
             termination_condition=termination
         )
@@ -131,16 +196,143 @@ class Auto_gen:
             self.get_skills_list,
             description="MineCraftBotにて実行可能な関数（メソッド）の名前、説明、非同期フラグのリストを取得するツールです。結果は、[{'name': 関数名, 'description': 説明, 'is_async': 非同期フラグ}]のリスト形式で返します。"
         )
+        self.get_skill_code_tool = FunctionTool(
+            self._get_skill_code_wrapper,
+            description="指定されたMineCraftBotのスキル関数のソースコードを取得します (docstring除外)。スキル関数の詳細な動作や引数を確認したい場合に使用します。"
+        )
+        # Add the execute_python_code tool definition
+        self.execute_python_code_tool = FunctionTool(
+            self._execute_python_code_wrapper,
+            description="指定されたPythonコード文字列を実行します。CodeGeneratorAgentが生成したコードを実行する際に使用します。引数には実行したいPythonコードを文字列として渡してください。"
+        )
     
     async def get_skills_list(self) -> str:
-        """Skillsクラスで利用可能な関数（メソッド）の名前、説明、非同期フラグのリストを取得"""
-        return str(await self.discovery.get_skills_list())
+        """Skillsクラスで利用可能な関数（メソッド）の名前、説明、非同期フラグのリストを取得し、LLMが読みやすい形式の英語文字列で返す"""
+        skills_list = await self.discovery.get_skills_list()
+        
+        if not skills_list:
+            return "No available skills found."
+        
+        output_parts = ["Available Skills:"]
+        for skill in skills_list:
+            skill_name = skill.get('name', 'Unknown Name')
+            is_async = skill.get('is_async', False)
+            description = skill.get('description', 'No description').strip()
+            async_str = "Yes" if is_async else "No"
+            
+            skill_info = [
+                f"--- Skill: {skill_name} ---",
+                f"Async: {async_str}",
+                f"Description:",
+                description
+            ]
+            output_parts.append("\n".join(skill_info))
+            
+        # Separate each skill info with two newlines
+        return "\n\n".join(output_parts)
+    
+    async def _get_skill_code_wrapper(self, skill_name: str) -> str:
+        """discovery.get_skill_codeのラッパーです。LLM用にフォーマットされた文字列を返します。"""
+        print(f"\033[34mTool:GetSkillCode called for skill: {skill_name}\033[0m")
+        result = await self.discovery.get_skill_code(skill_name)
+        
+        if result.get("success", False):
+            code = result.get("message", "")
+            return f"Source code for skill '{skill_name}':\n```python\n{code}\n```"
+        else:
+            error_message = result.get("message", "Unknown error")
+            return f"Error getting source code for skill '{skill_name}': {error_message}"
+    
+    # Add the wrapper method for execute_python_code
+    async def _execute_python_code_wrapper(self, code_string: str) -> str:
+        """Wrapper for discovery.execute_python_code. Executes the code and returns formatted results for the LLM."""
+        print(f"\033[34mTool:ExecutePythonCode called. Executing code:\n```python\n{code_string}\n```\033[0m")
+        result = await self.discovery.execute_python_code(code_string)
+
+        output_parts = []
+        if result.get("success", False):
+            output_parts.append("Code execution successful.")
+            output = result.get("output", "").strip()
+            error_output = result.get("error_output", "").strip()
+            if output:
+                output_parts.append("Standard Output:")
+                output_parts.append("---")
+                output_parts.append(output)
+                output_parts.append("---")
+            if error_output:
+                output_parts.append("Standard Error Output:")
+                output_parts.append("---")
+                output_parts.append(error_output)
+                output_parts.append("---")
+            if not output and not error_output:
+                 output_parts.append("(No output on stdout or stderr)")
+
+        else:
+            output_parts.append("Code execution failed.")
+            error_message = result.get("error", "Unknown error")
+            traceback_str = result.get("traceback", "No traceback available")
+            error_output_before = result.get("error_output", "").strip()
+            
+            output_parts.append(f"Error: {error_message}")
+            output_parts.append("Traceback:")
+            output_parts.append("---")
+            output_parts.append(traceback_str)
+            output_parts.append("---")
+            if error_output_before:
+                output_parts.append("Standard Error Output before exception:")
+                output_parts.append("---")
+                output_parts.append(error_output_before)
+                output_parts.append("---")
+
+        return "\n".join(output_parts)
     
     async def get_bot_status(self) -> str:
-        """MinecraftのBotのインベントリ情報、周囲ブロック情報などをもとに、現在のBOTの状況を分析する"""
-        print("\033[34mTool:GetBotStatus が呼び出されました(BOTの状態を取得します)\033[0m")
-        bot_status = await self.discovery.get_bot_status()
-        return str(bot_status)
+        """Retrieves the bot's status from discovery and returns it as a formatted string for the LLM."""
+        print("\033[34mTool:GetBotStatus called (Retrieving BOT status)\033[0m")
+        bot_status_dict = await self.discovery.get_bot_status()
+
+        if bot_status_dict is None:
+            return "Could not retrieve bot status."
+
+        output_lines = ["Bot Status:"]
+        output_lines.append(f"- Biome: {bot_status_dict.get('biome', 'N/A')}")
+        # Time of Day with explanation
+        time_of_day = bot_status_dict.get('time_of_day', 'N/A')
+        time_explanation = "  (Dawn: 0, Noon: 6000, Dusk: 12000, Night: 13000, Midnight: 18000, Sunrise: 23000)"
+        output_lines.append(f"- Time of Day: {time_of_day} / 23992")
+        output_lines.append(time_explanation)
+        # Health and Hunger with max values
+        health = bot_status_dict.get('health', 'N/A')
+        hunger = bot_status_dict.get('hunger', 'N/A')
+        output_lines.append(f"- Health: {health} / 20")
+        output_lines.append(f"- Hunger: {hunger} / 20")
+        output_lines.append(f"- Position: {bot_status_dict.get('bot_position', 'N/A')}")
+
+        output_lines.append("\nNearby Blocks:")
+        for direction in ["front", "right", "back", "left", "center"]:
+            blocks = bot_status_dict.get(f"{direction}_blocks", [])
+            blocks_str = ", ".join(blocks) if blocks else "None"
+            output_lines.append(f"- {direction.capitalize()}: {blocks_str}")
+
+        output_lines.append("\nNearby Entities:")
+        entities = bot_status_dict.get('nearby_entities', [])
+        if entities:
+            for entity in entities:
+                pos = entity.get('position', {})
+                pos_str = f"x={pos.get('x', '?')}, y={pos.get('y', '?')}, z={pos.get('z', '?')}"
+                output_lines.append(f"- {entity.get('name', 'Unknown')} at ({pos_str})")
+        else:
+            output_lines.append("- None nearby")
+
+        output_lines.append("\nInventory:")
+        inventory = bot_status_dict.get('inventory', {})
+        if inventory:
+            for item, count in inventory.items():
+                output_lines.append(f"- {item}: {count}")
+        else:
+            output_lines.append("- Empty")
+
+        return "\n".join(output_lines)
 
     async def capture_bot_view(self,attention_hint:str=None) -> str:
         """
@@ -221,4 +413,6 @@ class Auto_gen:
                  print("エラー発生のため、ブラウザをクローズします。")
                  await browser.close()
             # OpenAI AsyncClient には明示的な close は不要
+        
+    
         
