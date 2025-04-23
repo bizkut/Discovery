@@ -313,17 +313,59 @@ class Discovery:
             # アンダースコアで始まらない公開メソッドのみを対象とする
             if not name.startswith('_'):
                 # docstringを取得し、整形
-                docstring = inspect.cleandoc(method.__doc__) if method.__doc__ else "説明がありません。"
-                # メソッドが非同期関数かどうかをチェック
-                is_async = inspect.iscoroutinefunction(method)
+                docstring = inspect.cleandoc(method.__doc__) if method.__doc__ else ""
+                description_lines = []
+                usage_lines = []
+                in_description = True
+                section_headers = ("Args:", "Arguments:", "Parameters:", "Returns:", "Yields:", "Raises:", "Attributes:")
+
+                if docstring:
+                    lines = docstring.splitlines()
+                    if lines:
+                        description_lines.append(lines[0]) # 最初の行は必ずdescription
+                        # 2行目以降を処理
+                        for i in range(1, len(lines)):
+                            line = lines[i]
+                            stripped_line = line.strip()
+                            # DescriptionとUsageの区切りを判定
+                            if in_description and (not stripped_line or stripped_line.startswith(section_headers)):
+                                in_description = False
+                            
+                            if in_description:
+                                description_lines.append(line)
+                            else:
+                                usage_lines.append(line)
+
+                description = "\n".join(description_lines).strip()
+                usage = "\n".join(usage_lines).strip()
+                if not description:
+                    description = "説明がありません。"
+                if not usage:
+                    usage = "-" # Usageがない場合はハイフン
+
+                # --- 関数シグネチャの取得 ---
+                try:
+                    source_lines = inspect.getsource(method).splitlines()
+                    # 最初の 'def' または 'async def' の行を取得
+                    signature_line = next((line for line in source_lines if line.strip().startswith(('def ', 'async def '))), None)
+                    if signature_line:
+                        # 末尾のコロンを除去
+                        signature = signature_line.strip().rstrip(':')
+                    else:
+                        # 見つからない場合はフォールバック
+                        signature = name
+                except (TypeError, OSError):
+                    # ソースコードが取得できない場合はフォールバック
+                    signature = name
+                # --- ここまで追加・変更 ---
 
                 skill_list.append({
-                    "name": name,
-                    "description": docstring,
-                    "is_async": is_async # 非同期フラグを追加
+                    "name": signature, # name を signature に変更 (または両方含める)
+                    "description": description, # 分割した説明
+                    "usage": usage           # 分割した使い方
                 })
 
-        # 名前順にソートして返す
+        # 名前順にソートして返す (ソートキーも変更)
         return sorted(skill_list, key=lambda x: x['name'])
     
     async def get_skill_code(self, skill_name: str):
@@ -463,7 +505,8 @@ async def {dynamic_async_func_name}():
                     await async_func_to_run()
             else:
                 # 関数が正しく定義されなかった場合のエラー
-                raise RuntimeError(f"Failed to define or find the async wrapper function '{dynamic_async_func_name}'.")
+                error_message = f"Failed to define or find the async wrapper function '{dynamic_async_func_name}'.\n\n{wrapper_code}"
+                raise RuntimeError(error_message)
 
             # 実行結果を取得
             output = output_buffer.getvalue()
@@ -473,6 +516,7 @@ async def {dynamic_async_func_name}():
                 "success": True,
                 "output": output,
                 "error_output": error_output
+                # executed_code はエラー時のみ
             }
 
         except Exception as e:
@@ -482,13 +526,12 @@ async def {dynamic_async_func_name}():
             # エラー発生前のエラー出力も取得しておく
             error_output_before_exception = error_buffer.getvalue()
 
-            print(f"コード実行中にエラーが発生しました: {error_message}") # コンソールにもエラー表示
+            print(f"\033[31mコード実行中にエラーが発生しました: {error_message}\nエラー詳細:{tb_str}\n実行結果:{error_output_before_exception}\033[0m") # コンソールにもエラー表示
 
             return {
                 "success": False,
                 "error": error_message,
                 "traceback": tb_str,
-                # エラー発生前の標準エラー出力も返す
                 "error_output": error_output_before_exception
             }
 
@@ -505,19 +548,39 @@ async def run_craft_example():
         return
     
     code = """
-# Let's move to the nearest 'oak_log' and collect 16 logs
-go_to_result = await bot.go_to_nearest_block('oak_log')
-if not go_to_result['success']:
-    raise Exception(f"Failed to move to oak log: {go_to_result['message']}")
+# まずは最も近いoak_log（オークの原木）を探す
+oak_log_block = skills.get_nearest_block('oak_log')
 
-collect_result = await bot.collect_block('oak_log', 16)
-collect_result"""
+if oak_log_block is None:
+    # oak_logが見つからなければspruce_log（トウヒの原木）も探す
+    spruce_log_block = skills.get_nearest_block('spruce_log')
+    if spruce_log_block is None:
+        # それも無ければ、他の原木も検討可能だがここでは探索失敗として例外を出す
+        raise Exception("周囲に採取可能な原木が見つかりません。森林バイオームへの移動などを検討してください。")
+    else:
+        target_block = spruce_log_block
+        target_block_name = 'spruce_log'
+else:
+    target_block = oak_log_block
+    target_block_name = 'oak_log'
+
+# 見つかった原木の座標に移動（最小距離1で隣接まで移動）
+move_result = await skills.move_to_position(target_block.position.x, target_block.position.y, target_block.position.z, min_distance=1)
+
+if not move_result['success']:
+    raise Exception(f"{target_block_name}への移動に失敗しました。{move_result.get('message', '')}")
+
+# 移動成功後、その原木を3個収集する
+collect_result = await skills.collect_block(target_block_name, num=3)
+
+if not collect_result['success']:
+    raise Exception(f"{target_block_name}の収集に失敗しました。{collect_result.get('message', '')}")
+"""
     while True:
         try:
             print(input("Enter: "))
-            print(await discovery.get_skill_code('collect_block'))
 
-            print(await discovery.execute_python_code(code))
+            print(await discovery.get_skills_list())
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
