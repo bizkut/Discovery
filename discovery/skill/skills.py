@@ -17,6 +17,20 @@ class Skills:
         self.pathfinder = discovery.pathfinder
         self.movements = discovery.movements
         self.mineflayer = discovery.mineflayer
+
+    def get_bot_position(self):
+        """
+        ボットの現在位置を取得します。
+
+        Returns:
+            tuple: ボットの位置のx, y, z座標
+        
+        Example:
+            >>> get_bot_position()
+            (100, 50, 200)
+        """
+        bot_pos = self.bot.blockAt(self.bot.entity.position).position
+        return bot_pos.x, bot_pos.y, bot_pos.z
         
     async def get_surrounding_blocks(self, position=None, x_distance=10, y_distance=10, z_distance=10):
         """
@@ -1722,9 +1736,9 @@ class Skills:
             result["message"] = f"既に目標位置 {x}, {y}, {z} の近く（{distance_to_target:.2f}ブロック）にいます。移動をスキップします。"
             self.bot.chat(result["message"])
             return result
-        
         if dontMoveUnderLiquid:
-            if self.bot.blockAt(x, y, z).name == 'water' or self.bot.blockAt(x, y, z).name == 'lava':
+            Vec3 = require('vec3')
+            if self.bot.blockAt(Vec3(x, y, z)).name == 'water' or self.bot.blockAt(Vec3(x, y, z)).name == 'lava':
                 result["message"] = f"目標位置 {x}, {y}, {z} は液体ブロックです。溺れる・焼け死ぬ可能性があるため、移動を中止します。"
                 result["error"] = "liquid_block"
                 self.bot.chat(result["message"])
