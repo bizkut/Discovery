@@ -412,7 +412,8 @@ class Discovery:
     
     async def execute_python_code(self, code_string: str):
         """渡されたPythonコード文字列を実行します（非同期対応）"""
-        if not self.discovery or not self.discovery.bot or not self.skills:
+        # Check if bot and skills are initialized correctly
+        if not self.bot or not self.skills:
             print("エラー: ボットまたはスキルが初期化されていません。")
             return {"success": False, "error": "Bot or skills not initialized", "traceback": "", "output": "", "error_output": ""}
 
@@ -420,15 +421,15 @@ class Discovery:
         error_buffer = io.StringIO()
 
         # 実行コンテキストに渡す変数 (botを追加)
-        bot = self.discovery.bot # エイリアス
+        bot = self.bot # エイリアス
         skills = self.skills # エイリアス
-        discovery = self.discovery # エイリアス
+        discovery = self # エイリアス
         exec_globals = {
             "asyncio": asyncio,
             "skills": skills,
             "discovery": discovery,
             "bot": bot,
-            "__builtins__": __builtins__ # 安全のため、組み込み関数へのアクセスを許可
+            "__builtins__": __builtins__ # これが含まれている点が重要
         }
 
         # 動的に生成する非同期ラッパー関数の名前
@@ -502,11 +503,21 @@ async def run_craft_example():
     if not server_active:
         print("サーバーに接続できません。終了します。")
         return
-        
+    
+    code = """
+# Let's move to the nearest 'oak_log' and collect 16 logs
+go_to_result = await bot.go_to_nearest_block('oak_log')
+if not go_to_result['success']:
+    raise Exception(f"Failed to move to oak log: {go_to_result['message']}")
+
+collect_result = await bot.collect_block('oak_log', 16)
+collect_result"""
     while True:
         try:
             print(input("Enter: "))
-            print(await discovery.get_skill_code("craft_recipe"))
+            print(await discovery.get_skill_code('collect_block'))
+
+            print(await discovery.execute_python_code(code))
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
