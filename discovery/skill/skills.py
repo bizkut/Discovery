@@ -1111,12 +1111,12 @@ class Skills:
             self.bot.chat(result["message"])
             return result
 
-    async def go_to_nearest_block(self, block_type, min_distance=2, range=64):
+    async def go_to_nearest_block(self, block_name, min_distance=2, range=64):
         """
         指定されたタイプの最も近いブロックまで移動します。
         
         Args:
-            block_type (str): 移動先のブロックタイプ
+            block_name (str): 移動先のブロック名
             min_distance (int): ブロックから保つ距離。デフォルトは2
             range (int): ブロックを探す最大範囲。デフォルトは64
             
@@ -1124,13 +1124,13 @@ class Skills:
             dict: 結果を含む辞書
                 - success (bool): ブロックまで移動できた場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
-                - block_type (str): 探したブロックタイプ
+                - block_name (str): 探したブロック名
                 - position (dict, optional): 見つかったブロックの位置 {x, y, z}（成功時のみ）
         """
         result = {
             "success": False,
             "message": "",
-            "block_type": block_type
+            "block_name": block_name
         }
         
         try:
@@ -1141,9 +1141,9 @@ class Skills:
                 self.bot.chat(f"最大検索範囲を{MAX_RANGE}ブロックに制限します。")
                 
             # 最も近いブロックを探す
-            block = self.get_nearest_block(block_type, range)
+            block = self.get_nearest_block(self._get_item_id(block_name), range)
             if not block:
-                result["message"] = f"{range}ブロック以内に{block_type}が見つかりませんでした。"
+                result["message"] = f"{range}ブロック以内に{block_name}が見つかりませんでした。"
                 self.bot.chat(result["message"])
                 return result
                 
@@ -1158,17 +1158,17 @@ class Skills:
             # ブロックまで移動
             move_result = await self.move_to_position(position.x, position.y, position.z, min_distance)
             if not move_result["success"]:
-                result["message"] = f"{block_type}への移動中にエラーが発生しました: {move_result['message']}"
+                result["message"] = f"{block_name}への移動中にエラーが発生しました: {move_result['message']}"
                 self.bot.chat(result["message"])
                 return result
                 
             result["success"] = True
-            result["message"] = f"{block_type}(X:{position.x}, Y:{position.y}, Z:{position.z})に到達しました。"
+            result["message"] = f"{block_name}(X:{position.x}, Y:{position.y}, Z:{position.z})に到達しました。"
             self.bot.chat(result["message"])
             return result
             
         except Exception as e:
-            result["message"] = f"{block_type}への移動中に予期せぬエラーが発生しました: {str(e)}"
+            result["message"] = f"{block_name}への移動中に予期せぬエラーが発生しました: {str(e)}"
             self.bot.chat(result["message"])
             import traceback
             traceback.print_exc()
@@ -1479,12 +1479,12 @@ class Skills:
         self.bot.chat(result["message"])
         return result
 
-    async def collect_block(self, block_type, num=1, exclude=None):
+    async def collect_block(self, block_name, num=1, exclude=None):
         """
         指定されたタイプのブロックを収集します。
         
         Args:
-            block_type (str): 収集するブロックのタイプ
+            block_name (str): 収集するブロックの名前
             num (int): 収集するブロックの数。デフォルトは1
             exclude (list, optional): 除外するブロックの位置のリスト
             
@@ -1493,14 +1493,14 @@ class Skills:
                 - success (bool): 収集に成功した場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
                 - collected (int): 収集したブロックの数
-                - block_type (str): 収集しようとしたブロックタイプ
+                - block_name (str): 収集しようとしたブロック名
                 - error (str, optional): エラーがある場合のエラーコード
         """
         result = {
             "success": False,
             "message": "",
             "collected": 0,
-            "block_type": block_type
+            "block_name": block_name
         }
         
         if num < 1:
@@ -1510,19 +1510,19 @@ class Skills:
             return result
             
         # 同等のブロックタイプをリストに追加
-        blocktypes = [block_type]
+        blocktypes = [block_name]
         
         # 特殊処理: 鉱石ブロックの対応を追加
         ores = ['coal', 'diamond', 'emerald', 'iron', 'gold', 'lapis_lazuli', 'redstone']
-        if block_type in ores:
-            blocktypes.append(f"{block_type}_ore")
+        if block_name in ores:
+            blocktypes.append(f"{block_name}_ore")
         
         # 深層岩鉱石の対応
-        if block_type.endswith('ore'):
-            blocktypes.append(f"deepslate_{block_type}")
+        if block_name.endswith('ore'):
+            blocktypes.append(f"deepslate_{block_name}")
             
         # dirtの特殊処理
-        if block_type == 'dirt':
+        if block_name == 'dirt':
             blocktypes.append('grass_block')
             
         collected = 0
@@ -1550,9 +1550,9 @@ class Skills:
             
             if not blocks:
                 if collected == 0:
-                    result["message"] = f"近くに{block_type}が見つかりません。"
+                    result["message"] = f"近くに{block_name}が見つかりません。"
                 else:
-                    result["message"] = f"これ以上{block_type}が見つかりません。"
+                    result["message"] = f"これ以上{block_name}が見つかりません。"
                 result["error"] = "no_blocks_found"
                 break
                 
@@ -1565,7 +1565,7 @@ class Skills:
             else:
                 held_item_id = None
             if not block.canHarvest(held_item_id):
-                result["message"] = f"{block_type}を採掘するための適切なツールがありません。"
+                result["message"] = f"{block_name}を採掘するための適切なツールがありません。"
                 result["error"] = "no_suitable_tool"
                 return result
                 
@@ -1575,18 +1575,18 @@ class Skills:
                 await self.auto_light()
             except Exception as e:
                 if str(e) == 'NoChests':
-                    result["message"] = f"{block_type}の収集に失敗: インベントリが一杯で、保管場所がありません。"
+                    result["message"] = f"{block_name}の収集に失敗: インベントリが一杯で、保管場所がありません。"
                     result["error"] = "inventory_full"
                     break
                 else:
-                    result["message"] = f"{block_type}の収集に失敗: {str(e)}"
+                    result["message"] = f"{block_name}の収集に失敗: {str(e)}"
                     result["error"] = "collection_failed"
                     continue
                     
         result["collected"] = collected
         result["success"] = collected > 0
         if not result["message"]:
-            result["message"] = f"{block_type}を{collected}個収集しました。"
+            result["message"] = f"{block_name}を{collected}個収集しました。"
         
         self.bot.chat(result["message"])
         return result
