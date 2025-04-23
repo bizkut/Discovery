@@ -11,10 +11,10 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.base import TaskResult
 from autogen_agentchat.conditions import ExternalTermination, TextMentionTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_agentchat.teams import SelectorGroupChat
 from autogen_agentchat.ui import Console
 from autogen_core import CancellationToken
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-import autogen
 from autogen import Agent, ConversableAgent, UserProxyAgent, config_list_from_dotenv
 from autogen.agentchat.contrib.capabilities.vision_capability import VisionCapability
 from autogen.agentchat.contrib.img_utils import get_pil_image, pil_to_data_uri
@@ -33,33 +33,34 @@ class Auto_gen:
         self.load_agents()
 
     def load_agents(self) -> None:
-        model_client = OpenAIChatCompletionClient(model="gpt-4o")
+        self.model_client = OpenAIChatCompletionClient(model="gpt-4o")
 
         self.BotStatusAgent = AssistantAgent(
             name="BotStatusAgent",
             tools=[self.get_bot_status_tool,self.capture_bot_view_tool],
-            model_client=model_client,
+            model_client=self.model_client,
             description="MinecraftのBotのインベントリ情報、周囲ブロック情報などをもとに、現在のBOTの状況を分析するエージェント。",
             system_message="""
             あなたは、Minecraftを熟知した親切なアシスタントです。ツールを使用してタスクを解決します。
             具体的には、ツールから得られたMineCraft Botの情報を下に、現在のMineCraft Botの状態を詳細に解説することが出来ます。
+            また、設定された'最終目標'について、Minecraft Botの状態を元に、'最終目標'が達成されたか評価することも出来ます。達成したと判断した場合は'タスク完了'というメッセージを返してください。
             """
         )
         self.MasterPlannerAgent = AssistantAgent(
             name="MasterPlannerAgent",
-            model_client=model_client,
+            model_client=self.model_client,
             description="MinecraftのBotの状態をもとに、目標達成のための計画を立案するエージェント。",
             system_message="""
             あなたは、マインクラフトを熟知した高度なAIエージェントの最上位プランナーです。
             あなたの主な役割は、ユーザーが設定した最終目標と、Minecraft Botの現在の状況を分析し、目標達成のための中〜高レベルのタスク計画を立案することです。
             中〜高レベルのタスクとは、個々のアクション（例：「1ブロック前に進む」「自座標よりy+10のブロック掘る」）ではなく、より抽象的な目標（例：「木材を10個集める」「作業台を作成する」「鉄のピッケルを作成する」）をリストアップし、目標達成のためのに絶対に必要な工程を立案することです。
             更に、設定した目標を達成するために必要なツールなどがある場合、そのツールを作成するタスクも含めて立案してください。
-            また、提案された全ての行動が実行可能と判断した場合は、'タスク完了' というメッセージを出力してください。
+            また解答は、必ず日本語で行ってください。
             """
         )
         self.ActionDecomposerAgent = AssistantAgent(
             name="ActionDecomposerAgent",
-            model_client=model_client,
+            model_client=self.model_client,
             description="MasterPlannerAgentが生成したタスクを元に、Minecraft Botが実行可能な具体的な行動ステップに分解するエージェント。",
             system_message="""
             あなたは、マインクラフトを熟知した高度なAIエージェントであり、提案されたタスクを達成するための具体的な行動ステップに分解するエージェントです。
@@ -69,8 +70,8 @@ class Auto_gen:
         )
         self.ProcessReviewerAgent = AssistantAgent(
             name="ProcessReviewerAgent",
-            tools=[self.get_skills_list_tool, self.get_skill_code_tool],
-            model_client=model_client,
+            tools=[self.get_skills_list_tool],
+            model_client=self.model_client,
             description="ActionDecomposerAgentが生成した行動ステップを実行するエージェント。提案された行動がPythonコードで実行可能なスキルか判断し、必要であればスキルのコード情報、引数、動作を確認します。",
             system_message="""
             あなたは、提案された行動が、MineCraftBotにて実行可能な関数（メソッド）であるかを判断し、実行ができない場合、行動ステップまたは目標の修正や改善を提案するエージェントです。
@@ -80,31 +81,31 @@ class Auto_gen:
         )
         self.CodeGeneratorAgent = AssistantAgent(
             name="CodeGeneratorAgent",
-            tools=[self.get_skills_list_tool, self.get_skill_code_tool],
-            model_client=model_client,
+            tools=[self.get_skills_list_tool],
+            model_client=self.model_client,
             description="提案された行動ステップから、スキル関数を元に、Pythonのコードを生成するエージェント。",
             system_message="""
             あなたは、Minecraft Bot の操作を自動化するための Python コードを生成する専門のAIエージェントです。
             あなたの主な役割は、提案されたタスクや行動ステップを分析し、`discovery.skills` オブジェクトで利用可能なメソッドを組み合わせて、それらを実行する Python コードを生成することです。
 
             考慮事項:
-            - 利用可能なスキル: `get_skills_list` ツールでスキルの一覧と説明を確認できます。必要であれば `get_skill_code` ツールで特定のスキルの詳細なソースコードを確認してください。
+            - 利用可能なスキル: `get_skills_list` ツールでスキルの一覧と説明を確認できます。必要であれば `get_skill_code` ツールで特定のスキルの詳細なソースコードと**正確な引数**を確認してください。
             - 非同期処理: スキルが非同期 (`Async: Yes`) の場合は、コード内で `await` を使用して呼び出す必要があります。
-            - コードの実行環境: 生成されたコードは、`skills`、`bot`、`discovery` オブジェクトが利用可能な環境で実行されます。これらのオブジェクトのメソッドを適切に利用してください。
+            - **重要:** **外部ライブラリの `import` は行わないでください。** 必要な機能は提供された `skills` オブジェクトを通じて利用してください。
             - 出力形式: 生成した Python コードは、必ず Markdown のコードブロック (` ```python ... ``` `) で囲んでください。コード以外の説明は最小限にしてください。
             """
         )
-        self.SkillExecutorAgent = AssistantAgent(
-            name="SkillExecutorAgent",
+        self.CodeExecutorAgent = AssistantAgent(
+            name="CodeExecutorAgent",
             tools=[self.execute_python_code_tool],
-            model_client=model_client,
+            model_client=self.model_client,
             description="CodeGeneratorAgentが生成したコードを実行するエージェント。",
             system_message="""
             あなたは、Minecraft Bot を操作するための Python コードを実行し、その結果を報告する AI エージェントです。
             あなたの主な役割は、提供された Python コード文字列を `execute_python_code` ツールを使用して実行することです。
 
             手順:
-            1.  **コード実行:** 提供された Python コードを `execute_python_code` ツールで実行します。コードは `discovery.skills` や `bot` オブジェクトを利用することを想定しています。
+            1.  **コード実行:** 提供された Python コードを `execute_python_code` ツールで実行します。コードは `skills`オブジェクトを利用することを想定しています。(例: `skills.collect_block('oak_log', 16)`)
             2.  **結果分析:** ツールの実行結果 (成功/失敗、標準出力、標準エラー出力、トレースバック) を注意深く確認します。
             3.  **成功報告:** コードの実行が成功した場合 (ツールの結果が "Code execution successful." で始まる場合)、その旨と、必要に応じて標準出力の内容を簡潔に報告してください。最終的な目標達成につながる場合は、その旨も言及してください。
             4.  **失敗報告:** コードの実行が失敗した場合 (ツールの結果が "Code execution failed." で始まる場合)、以下の情報を**詳細に**報告してください。
@@ -120,7 +121,7 @@ class Auto_gen:
         self.CodeDebuggerAgent = AssistantAgent(
             name="CodeDebuggerAgent",
             tools=[self.get_skill_code_tool],
-            model_client=model_client,
+            model_client=self.model_client,
             description="Pythonコード実行時のエラーを分析し、デバッグと修正案の提案を行います。",
             system_message="""
             あなたは、Python コードのデバッグと問題解決を専門とする高度な AI アシスタントです。
@@ -141,18 +142,49 @@ class Auto_gen:
             """
         )
     async def main(self,message:str) -> None:
+        selector_prompt = """あなたは優秀なリーダーとして、タスクを実行するエージェントを選択してください。
+
+        {roles}
+
+        現在の会話コンテキスト:
+        {history}
+
+        上記の会話を読み、{participants}の中から次のタスクを実行するエージェントを選択してください。
+        プランナーエージェントが他のエージェントの作業開始前にタスクを割り当てていることを確認してください。
+        エージェントは1つだけ選択してください。
+
+        なお、以下のプロセスで選択することをおすすめします。
+        1. BotStatusAgentでMinecraft Botの状態を確認する
+        2. MasterPlannerAgentで目標達成のためのタスクを立案する
+        3. ActionDecomposerAgentでタスクを具体的な行動ステップに分解する
+        4. ProcessReviewerAgentで行動ステップが実行可能か確認する
+        5. CodeGeneratorAgentで行動ステップをPythonコードに変換する
+        6. CodeExecutorAgentでPythonコードを実行する
+        7. BotStatusAgentでPythonコードでの実行後の状態を確認する
+           - ActionDecomposerAgentが提案したタスクが、達成されたか評価する。達成されている場合は、次のステップに移る。
+           - 達成されていない場合、CodeDebuggerAgentでエラーを分析し、修正案を提案する
+           - 提案された修正案を元に、CodeGeneratorAgentでコードを修正する
+           - 修正後、CodeExecutorAgentでコードを再実行する
+           - コードを修正してもエラーが改善しない場合は、ProcessReviewerAgentで行動ステップの見直しを提案する。その際、タスクの見直しが必要な場合は、MasterPlannerAgentに相談を行う。
+           - エラーがなく、目標が達成された場合、次のステップに移る。
+        8. ActionDecomposerAgentが提案した次のタスクを実行するために4.から繰り返す。
+        9. ActionDecomposerAgentが提案したタスクが全て達成された場合は、1.から繰り返す。
+        """
         termination = TextMentionTermination("タスク完了")
-        team = RoundRobinGroupChat(
+        team = SelectorGroupChat(
             participants= [
                 self.BotStatusAgent,
                 self.MasterPlannerAgent,
                 self.ActionDecomposerAgent,
                 self.ProcessReviewerAgent,
                 self.CodeGeneratorAgent,
-                self.SkillExecutorAgent,
+                self.CodeExecutorAgent,
                 self.CodeDebuggerAgent
             ],
-            termination_condition=termination
+            termination_condition=termination,
+            model_client=self.model_client,
+            selector_prompt=selector_prompt,
+            allow_repeated_speaker=False,
         )
         await Console(
             team.run_stream(task=message)
@@ -194,7 +226,7 @@ class Auto_gen:
         )
         self.get_skills_list_tool = FunctionTool(
             self.get_skills_list,
-            description="MineCraftBotにて実行可能な関数（メソッド）の名前、説明、非同期フラグのリストを取得するツールです。結果は、[{'name': 関数名, 'description': 説明, 'is_async': 非同期フラグ}]のリスト形式で返します。"
+            description="MineCraftBotにて実行可能な全ての関数（メソッド）の名前、説明、非同期フラグのリストを取得するツールです。結果は、[{'name': 関数名, 'description': 説明, 'is_async': 非同期フラグ}]のリスト形式で返します。"
         )
         self.get_skill_code_tool = FunctionTool(
             self._get_skill_code_wrapper,
