@@ -31,6 +31,57 @@ class Skills:
         """
         bot_pos = self.bot.blockAt(self.bot.entity.position).position
         return bot_pos.x, bot_pos.y, bot_pos.z
+    
+    async def look_at_direction(self, direction):
+        """
+        BOTが指定された方角を向きます。BotViewAgentと組み合わせて、BOTの周辺視界を確認する際に有効です。
+
+        Args:
+            direction (str): 向く方角 ('north', 'south', 'east', 'west')
+
+        Returns:
+            None
+        """
+        self.bot.chat(f"{direction}を向きます。")
+        result = {
+            "success": False,
+            "message": "",
+            "direction": direction
+        }
+
+        try:
+            Vec3 = require('vec3')
+            current_pos = self.bot.entity.position
+            target_pos = current_pos.clone()
+
+            if direction == 'north':
+                target_pos.z -= 1
+            elif direction == 'south':
+                target_pos.z += 1
+            elif direction == 'east':
+                target_pos.x += 1
+            elif direction == 'west':
+                target_pos.x -= 1
+            else:
+                result["message"] = f"無効な方角です: {direction}。'north', 'south', 'east', 'west'のいずれかを指定してください。"
+                self.bot.chat(result["message"])
+                return
+
+            # 目の高さに合わせる
+            eye_height = self.bot.entity.height
+            self.bot.lookAt(Vec3(target_pos.x, current_pos.y + eye_height, target_pos.z))
+
+            result["success"] = True
+            result["message"] = f"{direction}を向きました。"
+            self.bot.chat(result["message"])
+            return
+
+        except Exception as e:
+            result["message"] = f"方角を向く際に予期せぬエラーが発生しました: {str(e)}"
+            self.bot.chat(result["message"])
+            import traceback
+            traceback.print_exc()
+            return
         
     async def get_surrounding_blocks(self, position=None, x_distance=10, y_distance=10, z_distance=10):
         """
