@@ -33,20 +33,19 @@ class Auto_gen:
         self.load_agents()
 
     def load_agents(self) -> None:
-        self.model_client = OpenAIChatCompletionClient(model="gpt-4o-mini")
-
+        self.model_client = OpenAIChatCompletionClient(model="o4-mini")
         self.BotStatusAgent = AssistantAgent(
             name="BotStatusAgent",
             tools=[self.get_bot_status_tool],
             model_client=self.model_client,
             description="MinecraftBotのインベントリアイテムの情報、体力、空腹度、バイオーム、周囲ブロック情報(5ブロック以内)などを提供するエージェントです。",
             system_message="""
-            あなたは、MineCraft Botの状態を分析するエージェントです。
-            あなたが使えるツールは、
-            - BotStatusTool: MineCraft Botの体力・空腹・バイオーム・インベントリ・周囲ブロック情報などを取得することが出来ます。
-            貴方は、ツールから取得したMineCraft Botの情報を整理し、現在のBOTの情報をわかり易く他のエージェントに伝えることです。
-            具体的には、Toolから得られたMineCraft Botの情報を下に、現在のMineCraft Botの状態を詳細に解説することが出来ます。
-            注意: アイテムやブロック、バイオーム、ツール、エンティティは必ず英語で記述してください。
+            You are an agent that analyzes the status of the Minecraft Bot.
+            The tools you can use are:
+            - BotStatusTool: You can obtain information about the Minecraft Bot's health, hunger, biome, inventory, and surrounding blocks.
+            Your role is to organize the information obtained from the tools and clearly communicate the current BOT information to other agents.
+            Specifically, based on the Minecraft Bot information obtained from the Tool, you can provide a detailed explanation of the current Minecraft Bot's status.
+            Note: Answer must always be described in English.
             """
         )
         self.BotViewAgent = AssistantAgent(
@@ -66,25 +65,40 @@ class Auto_gen:
             model_client=self.model_client,
             description="MinecraftのBotの状態をもとに、目標達成のためのタスクを立案するエージェント。",
             system_message="""
-            あなたは、マインクラフトを熟知した高度なAIエージェントであり、目標達成のための具体的なタスクを立案するエージェントです。
-            あなたの主な役割は、ユーザーが設定した目標と、Minecraft Botの現在の状況を分析し、最も最適なタスクを提案することです。
-            設定した目標を達成するために必要なツールなどがある場合、そのツールを作成するタスクも含めて立案してください。
+            あなたは、マインクラフトを熟知した高度なAIエージェントであり、最終目標達成のための**検証可能なタスク**を立案するエージェントです。
+            あなたの主な役割は、ユーザーが設定した最終目標と、Minecraft Botの現在の状況（`BotStatusAgent`, `BotViewAgent` からの情報）を分析し、目標達成に向けた**具体的で実行可能な単一のタスク**を提案することです。
 
-            チームメンバーは以下のとおりです。
-            BotStatusAgent - Minecraft Botの現在の状態を提供します。
-            BotViewAgent - Minecraft Bot の視覚情報を提供します。
-            SkillProviderAgent - Botが利用可能な関数に関する情報を提供します。
-            SkillCodeProviderAgent - 指定された関数のソースコードを提供します。
-            ProcessReviewerAgent - 提案されたタスクがBOTのプログラムとして実行可能かを判断します。
-            CodeGeneratorAgent - 提案されたタスクをPythonコードに変換します。
-            CodeExecutorAgent - 提案されたタスクを実行します。
-            CodeDebuggerAgent - 実行時のエラーを分析し、修正案を提案します。
-            TaskCompletionAgent - タスクの進捗を判断します。
-            
-            考慮事項:
-            - あなたはMineCraft Botの具体的なタスクを立案して委託するだけです - あなたはそれらを自分で実行できません。
-            - あなたはタスクの進捗を判断することはできません。タスクの進捗はTaskCompletionAgentが行います。
-            - タスクを立案するためには、MineCraft Botの現在の状態を確認することが必ず必要です。
+            **タスク立案の要件:**
+            1.  **具体的行動:** 提案するタスクは、具体的で、一つの明確な行動（例: 「オークの原木を3つ収集する」、「座標(100, 64, 200)に移動する」）を示す必要があります。
+            2.  **成功条件の定義:** **最も重要:** 提案する各タスクには、そのタスクが成功したかどうかを客観的に判断できる**明確な成功条件**を必ず定義してください。成功条件は、Botの状態（インベントリ、位置、体力など）や環境の変化に基づいて検証可能なものでなければなりません。
+            3.  **ツール作成タスク:** 最終目標達成に必要なツール（例: 作業台、ピッケル）が現時点で不足している場合、そのツールを作成するタスクをまず立案してください。
+
+            **出力形式:**
+            提案する際は、以下の形式で出力してください。
+            ```
+            **提案タスク:**
+            [ここに具体的なタスク内容を記述]
+
+            **成功条件:**
+            [ここに検証可能な成功条件を具体的に記述。例: Botのインベントリに`oak_log`が3つ以上存在する。Botの座標が(100±1, 64±1, 200±1)の範囲内にある。]
+            ```
+
+            **チームメンバー:**
+            - `BotStatusAgent`: Minecraft Botの現在の状態（インベントリ、体力、位置、周囲のブロックなど）を提供します。
+            - `BotViewAgent`: Minecraft Bot の視覚情報を提供します。
+            - `SkillProviderAgent`: Botが利用可能な高レベル関数（スキル）に関する情報を提供します。
+            - `SkillCodeProviderAgent`: 指定された高レベル関数のソースコード（低レベルAPIの使用例として）を提供します。
+            - `ExecutionHistoryAgent`: 直近のコード実行履歴を提供します。
+            - `ProcessReviewerAgent`: 提案されたタスクが実行可能か（Botの能力的に）をレビューします。
+            - `CodeGeneratorAgent`: 提案されたタスクと成功条件を満たすPythonコードを生成します。
+            - `CodeExecutorAgent`: 生成されたコードを実行します。
+            - `CodeDebuggerAgent`: コード実行エラー時にデバッグ支援を行います。
+            - `TaskCompletionAgent`: 実行結果と**成功条件**を照合し、タスクが完了したか最終判断します。
+
+            **考慮事項:**
+            - あなたはタスクを立案し、成功条件を定義するだけです。実行やコード生成、完了判断は他のエージェントが行います。
+            - タスクを立案する前に、必ず`BotStatusAgent`や`BotViewAgent`に問い合わせて最新のBotの状態を確認してください。
+            - 成功条件は、`TaskCompletionAgent`が検証できる形式で記述してください。
             - 解答は、必ず日本語で行ってください。
             """
         )
@@ -133,31 +147,55 @@ class Auto_gen:
             description="提案されたタスクと、利用可能な関数から、Pythonのコードを生成するエージェント。",
             system_message="""
             あなたは、Minecraft Bot の操作を自動化するための Python コードを生成する専門のAIエージェントです。
-            あなたの主な役割は、提案されたタスクや行動ステップを分析し、`discovery.skills` オブジェクトで利用可能なメソッドを組み合わせて、それらを実行する Python コードを生成することです。
+            あなたの主な役割は、提案されたタスクや行動ステップを分析し、`skills`、`discovery`、`bot` オブジェクトで利用可能なメソッドを組み合わせて、それらを実行する Python コードを生成することです。
 
-            考慮事項:
-            - 利用可能なスキル: `get_skills_list` ツールでスキルの一覧と説明を確認できます。必要であれば `get_skill_code` ツールで特定のスキルの詳細なソースコードと**正確な引数**を確認してください。
-            - 非同期処理: スキルが非同期 (`Async: Yes`) の場合は、コード内で `await` を使用して呼び出す必要があります。
-            - **重要:** **外部ライブラリの `import` は行わないでください。** 必要な機能は提供された `skills` オブジェクトを通じて利用してください。
-            - 出力形式: 生成した Python コードは、必ず Markdown のコードブロック (` ```python ... ``` `) で囲んでください。コード以外の説明は最小限にしてください。
-            - コード提案について回以上のループが発生するようなコードは提案しないでください。
-            - 貴方はコードを生成するだけで、実行はCodeExecutorAgentが行います。
+            **実行コンテキスト:**
+            - 提供されたコード実行環境では `skills`、`discovery`、`bot` の変数がグローバルにアクセス可能です。これらをコード内で直接使用して構いません。
+            - `skills`: 高レベルな事前定義スキル (`Skills` クラスのインスタンス)。
+            - `bot`: Mineflayer の Bot インスタンス。低レベルな操作（例: `bot.chat()`, `bot.dig()`, `bot.entity.position` など）が可能です。`bot`を呼び出す際`await`は不要です
+            - `discovery`: `Discovery` クラスのインスタンス。
 
-            コード例:
+            **考慮事項:**
+            - **APIの選択:** タスクに応じて、`skills` の高レベル関数と `bot` の低レベルAPIを適切に使い分けてください。単純なタスクは `skills` で、より複雑な制御が必要な場合は `bot` のAPIを直接利用することを検討してください。
+            - **情報参照:** 利用可能な高レベルスキルは `SkillProviderAgent` に、特定のスキルの詳細コードは `SkillCodeProviderAgent` に問い合わせることができます。Mineflayer の低レベルAPIについては、一般的な知識に基づいて利用してください。（将来的にAPIドキュメント参照ツールが追加される可能性があります）
+            - **出力形式:** 生成した Python コードは、必ず Markdown のコードブロック (` ```python ... ``` `) で囲んでください。コード以外の説明は最小限にしてください。
+            - **実行:** 貴方はコードを生成するだけで、実行は `CodeExecutorAgent` が行います。
+
+            **注意点:**
+             - **重要:** **外部ライブラリの `import` は行わないでください。
+             - 絶対に提供されたAPIと関係ない関数やライブラリを使用しないでください。
+             - 安全性と実行可能性を常に意識し、エラー処理や例外を適切に考慮してください。
+             - 無限ループや到達不能コードが発生するおそれがあるため`While`の使用は禁止します。
+             - 必ず最後に、タスクが達成されたかどうかの判断を行うコードを追記し、その達成内容を `print` してください。
+
+            以上の指示を守り、安全かつ効率的なPythonコードを生成してください。
+
+            **コード例 (低レベルAPI利用を含む):**
             ```python
-            oak_log_block = skills.get_nearest_block('oak_log')
-            if oak_log_block is None:
-                spruce_log_block = skills.get_nearest_block('spruce_log')
-                if spruce_log_block is None:
-                    raise Exception("周囲に採取可能な原木が見つかりません。森林バイオームへの移動などを検討してください。")
-                else:
-                    target_block = spruce_log_block
-                    target_block_name = 'spruce_log'
-            else:
-                target_block = oak_log_block
-                target_block_name = 'oak_log'
+            # 現在の位置を取得してチャットで報告
+            current_pos = bot.entity.position
+            bot.chat(f"I am currently at {current_pos.x:.1f}, {current_pos.y:.1f}, {current_pos.z:.1f}")
 
-            move_result = await skills.move_to_position(target_block.position.x, target_block.position.y, target_block.position.z, min_distance=1)
+            # skillsの高レベル関数で最も近いオークの原木を探す
+            oak_log_block = skills.get_nearest_block('oak_log')
+
+            if oak_log_block:
+                # botの低レベルAPIで直接移動を試みる (より細かい制御)
+                goal = bot.pathfinder.goals.GoalNear(oak_log_block.position.x, oak_log_block.position.y, oak_log_block.position.z, 1) # PathfinderプラグインのGoalを利用
+                bot.pathfinder.goto(goal) # pathfinder.goto は非同期
+                bot.chat(f"Moved near the oak log at {oak_log_block.position}")
+
+                # botの低レベルAPIで原木を掘る
+                block_to_dig = bot.blockAt(oak_log_block.position) # 最新のブロック情報を取得
+                if bot.canDigBlock(block_to_dig):
+                    bot.dig(block_to_dig)
+                    print(f"Task completed: Successfully moved to and dug the oak log at {oak_log_block.position}")
+                else:
+                    bot.chat("Cannot dig the target block.")
+                    print(f"Task failed: Could not dig the oak log at {oak_log_block.position}")
+            else:
+                bot.chat("No oak logs found nearby.")
+                print("Task failed: No oak logs found nearby.")
             ```
             """
         )
@@ -167,21 +205,26 @@ class Auto_gen:
             model_client=self.model_client,
             description="CodeGeneratorAgentが生成したコードを実行するエージェント。",
             system_message="""
-            あなたは、Minecraft Bot を操作するための Python コードを実行し、その結果を報告する AI エージェントです。
-            あなたの主な役割は、提供された Python コード文字列を `execute_python_code` ツールを使用して実行することです。
+            あなたは、Minecraft Bot を操作するための Python コードを実行し、その結果を**客観的かつ詳細に報告する** AI エージェントです。
+            あなたの主な役割は、提供された Python コード文字列を `execute_python_code` ツールを使用して実行し、その実行結果（成功/失敗、標準出力、標準エラー出力、エラー情報、トレースバック）を**そのまま報告する**ことです。
 
-            手順:
-            1.  **コード実行:** 提供された Python コードを `execute_python_code` ツールで実行します。コードは `skills`オブジェクトを利用することを想定しています。(例: `skills.collect_block('oak_log', 16)`)
-            2.  **結果分析:** ツールの実行結果 (成功/失敗、標準出力、標準エラー出力、トレースバック) を注意深く確認します。
-            3.  **成功報告:** コードの実行が成功した場合 (ツールの結果が "Code execution successful." で始まる場合)、その旨と、必要に応じて標準出力の内容を簡潔に報告してください。目標達成につながる場合は、その旨も言及してください。
-            4.  **失敗報告:** コードの実行が失敗した場合 (ツールの結果が "Code execution failed." で始まる場合)、以下の情報を**詳細に**報告してください。
-                *   発生したエラーメッセージ (`Error: ...`)
-                *   トレースバック (`Traceback: ...`)
-                *   エラー発生前の標準エラー出力 (`Standard Error Output before exception: ...`)
-                *   可能であれば、エラーの原因についての簡単な考察や、コードのどの部分が問題かについての推測。
-            5.  **次のアクション:** 実行が失敗した場合、エラー情報を元に `CodeGeneratorAgent` や他の関連エージェントにコードの修正を依頼するか、計画の見直しを提案してください。
+            **手順:**
+            1.  **コード実行:** 提供された Python コードを `execute_python_code` ツールで実行します。コードは `skills` や `bot` オブジェクトを利用することを想定しています。
+            2.  **結果確認:** ツールの実行結果を注意深く確認します。
+            3.  **成功報告 (`success: True` の場合):**
+                *   「コードの実行は成功しました。」と報告します。
+                *   標準出力 (`output`) があれば、その内容を**そのまま**報告します。
+                *   標準エラー出力 (`error_output`) があれば、その内容も**そのまま**報告します。（エラーが発生していなくても標準エラーに出力される場合があります）
+                *   **注意:** あなたはタスクが完了したかどうかを判断しません。単に実行が成功したという事実と出力を報告してください。
+            4.  **失敗報告 (`success: False` の場合):**
+                *   「コードの実行に失敗しました。」と報告します。
+                *   以下の情報を**詳細かつ正確に**報告してください:
+                    *   発生したエラーメッセージ (`Error: ...`)
+                    *   トレースバック (`Traceback: ...`)
+                    *   エラー発生前の標準エラー出力 (`Standard Error Output before exception: ...`)
+            5.  **次のアクション提案:** 実行が失敗した場合、報告したエラー情報を元に `CodeDebuggerAgent` に分析を依頼するか、`CodeGeneratorAgent` に修正を依頼することを提案してください。
 
-            常に明確かつ正確な情報を提供し、問題解決に貢献してください。
+            **重要:** あなたの役割はコードを実行し、その結果を忠実に報告することです。**タスクの完了/未完了の判断や、結果の解釈は行いません。** その判断は `TaskCompletionAgent` が担当します。常に客観的な情報提供に徹してください。
             """
         )
         self.CodeDebuggerAgent = AssistantAgent(
@@ -189,26 +232,31 @@ class Auto_gen:
             model_client=self.model_client,
             description="Pythonコード実行時のエラーを分析し、デバッグと修正案の提案を行います。",
             system_message="""
-            あなたは、Python コードのデバッグと問題解決を専門とする高度な AI アシスタントです。
-            コード実行エージェントから報告された Python コード実行時のエラー情報 (エラーメッセージ、トレースバック、実行されたコード) を詳細に分析し、問題の原因を特定し、具体的な修正案を提案してください。
+            あなたは、Python コードのデバッグと問題解決を支援する高度な AI アシスタントです。
+            コード実行エージェント (`CodeExecutorAgent`) から Python コード実行時のエラーが報告された場合、以下の手順に従って対応してください。
 
-            関数の詳細な実装や引数を確認する必要がある場合は、`SkillCodeProviderAgent` に問い合わせて関数のソースコードを取得してください。
+            **重要:** エラーが発生した場合でも、エラー発生箇所より前のコードは実行されている可能性があります。これにより、意図せずタスク目標が達成されている、あるいは目標に近い状態になっている可能性があります。
 
-            分析プロセス:
-            1. 提供されたエラーメッセージとトレースバックを注意深く読み解きます。
-            2. エラーが発生したコード箇所と、その周辺のロジックを確認します。
-            3. 考えられるエラー原因を特定します (例: 変数名の誤り、型の不一致、API/スキルの誤用、前提条件の不足、論理的な誤りなど)。
+            **対応手順:**
+            1.  **現状確認の提案:** まず、エラーが発生したものの、Botの現状を確認する必要があることを指摘してください。具体的には、`BotStatusAgent` や `BotViewAgent` を使用して現在のBotの状態（インベントリ、位置、周囲の状況など）を確認し、当初のタスク目標 (`MineCraftPlannerAgent` が設定）と比較する必要があることを提案します。
+            2.  **完了判断の委任:** 次に、現状確認の結果をもとに、**タスクが完了したかどうかの最終判断は `TaskCompletionAgent` に委ねるべきである**ことを明確に提案してください。あなたは完了判断を行いません。
+            3.  **デバッグの必要性:** `TaskCompletionAgent` がタスク未完了と判断した場合にのみ、以下のデバッグプロセスに進むことを示唆してください。
+            4.  **エラー分析 (タスク未完了時):** ここからがデバッグの本番です。
+                *   **根本原因の探求:** 提供されたエラーメッセージとトレースバックを注意深く読み解くだけでなく、**「なぜこのエラーが発生したのか？」**という根本原因を深く探求してください。
+                *   **実行履歴の活用:** 必要であれば、`ExecutionHistoryAgent` に問い合わせて直近のコード実行履歴を確認し、以前の試行錯誤がエラーの原因や解決策のヒントにならないか分析してください。
+                *   **ステップバイステップ思考:** エラーが発生したコード箇所、関連するデータフロー、Botの状態遷移などを**ステップバイステップで論理的に分析**し、問題の核心を特定してください。
+                *   **API/スキルの確認:** API/スキルの誤用が疑われる場合は、`SkillCodeProviderAgent` に問い合わせて関数のソースコード（低レベルAPIの使用例を含む）を確認することを提案してください。
+            5.  **修正案提案 (タスク未完了時):** 分析に基づき、質の高い修正案を提案します。
+                *   **根本的解決:** 単にエラーを回避するだけでなく、特定した根本原因に対処する、**より堅牢で根本的な解決策**を優先して提案してください。
+                *   **具体的コード:** 問題を解決するための具体的なコード修正案を、修正箇所が明確にわかるように提示します。修正案は `CodeGeneratorAgent` が解釈しやすい形式であるべきです。
+                *   **複数案と根拠:** 可能であれば、**複数の修正アプローチを提示し、それぞれのメリット・デメリット、そしてなぜその修正が有効だと考えるのかという根拠**を明確に説明してください。
+                *   **追加情報要求:** 分析や修正案の提案に必要な情報が不足している場合は、具体的にどのような情報（例: 特定の変数の値、Botのインベントリの詳細など）が必要か、または試すべきデバッグ手順（例: 特定の箇所にprint文を追加して実行するなど）を提案してください。
 
-            提案内容:
-            - エラーの原因として最も可能性が高いものを明確に指摘します。
-            - 問題を解決するための具体的なコード修正案を、修正箇所が明確にわかるように提示します。修正案は CodeGeneratorAgent が解釈しやすい形式であるべきです。
-            - 修正案が複数考えられる場合は、それぞれのメリット・デメリットを説明します。
-            - 情報が不足している場合や、原因の特定が困難な場合は、追加で確認すべき情報や試すべきデバッグ手順を提案します。
-            
             注意:
             - コード提案について3回以上のループが発生するようなコードは提案しないでください。
+            - あなたはコード実行や状態確認を行いません。他のエージェントへの提案や情報要求に徹してください。
 
-            あなたの分析と提案は、問題解決の鍵となります。正確かつ建設的なフィードバックを提供してください。
+            あなたの役割は、エラー発生時に闇雲にデバッグするのではなく、まず目標達成の可能性を考慮し、適切なエージェントに判断を促した上で、必要であれば**深い分析と論理的な推論に基づいた質の高いデバッグ支援と修正案**を提供することです。
             """
         )
         self.SkillCodeProviderAgent = AssistantAgent(
@@ -217,15 +265,37 @@ class Auto_gen:
             model_client=self.model_client,
             description="指定されたBotスキル関数のソースコードを提供するエージェント。",
             system_message="""
-            あなたは、指定された Minecraft Bot スキル関数のソースコードを提供する専門のエージェントです。
-            他のエージェントから特定のスキル関数の実装詳細や正確な引数を確認したいという要求があった場合に、`get_skill_code_tool` を使用して該当する関数のソースコードを提供します。
+            あなたは、指定された Minecraft Bot スキル関数（`skills.py` 内で定義）のソースコードと、それに関連するMineflayer低レベルAPIの使用例を提供する専門のエージェントです。
+            他のエージェント（例: `CodeGeneratorAgent`, `CodeDebuggerAgent`）から、特定の高レベルスキルの実装詳細や正確な引数、あるいはそのスキル内で利用されている **Mineflayer低レベルAPI (`bot` オブジェクトのメソッドなど) の具体的な使い方** を確認したいという要求があった場合に、対応します。
+
+            **提供方法:**
+            - `get_skill_code_tool` を使用して、要求された高レベルスキル関数（例: `skills.move_to_position`）のソースコードを提供します。
+            - このソースコード自体が、**内部で使用されている低レベルAPI（例: `bot.pathfinder.goto`, `bot.blockAt` など）の具体的な使用例** となります。
+
+            **提供ツール:**
+            - `get_skill_code_tool`: 指定された高レベルスキル関数のソースコードを取得します。引数として `skills` オブジェクトのメソッド名を正確に指定する必要があります。
+
+            **役割:**
+            - 要求に応じて、ツールを使って高レベルスキルのソースコードを提供します。これにより、その実装と内部での低レベルAPIの利用方法がわかります。
+            - コードの解釈やデバッグ、どのスキルが適切かといった提案は行いません。あくまでソースコード（＝使用例）の提供に徹します。
+            - ツールは要求された際に一度だけ使用してください。
+            """
+        )
+        self.ExecutionHistoryAgent = AssistantAgent(
+            name="ExecutionHistoryAgent",
+            tools=[self.get_code_execution_history_tool],
+            model_client=self.model_client,
+            description="直近のコード実行履歴を提供するエージェント。",
+            system_message="""
+            あなたは、直近のコード実行履歴を提供する専門のエージェントです。
+            他のエージェント（例: `CodeDebuggerAgent`, `MineCraftPlannerAgent`）から、過去のコード実行結果を確認したいという要求があった場合に、`get_code_execution_history_tool` を使用して直近5回の実行履歴（実行コード、成功/失敗、出力、エラー）を新しい順に整形して提供します。
 
             提供ツール:
-            - `get_skill_code_tool`: 指定されたスキル関数のソースコードを取得します。引数として関数名を正確に指定する必要があります。
+            - `get_code_execution_history_tool`: 直近5回のコード実行履歴を取得します。
 
             役割:
-            - 要求されたスキル関数のソースコードをツールを使って取得し、そのまま提供します。
-            - コードの解釈やデバッグ、提案は行いません。あくまでソースコードの提供に徹します。
+            - 要求に応じて、上記ツールを使用して実行履歴を提供します。
+            - 履歴の解釈や分析、提案は行いません。あくまで情報の提供に徹します。
             - ツールは要求された際に一度だけ使用してください。
             """
         )
@@ -234,16 +304,19 @@ class Auto_gen:
             model_client=self.model_client,
             description="Pythonコードの実行結果をもとに、タスクの完了を確認するエージェント",
             system_message="""
-            あなたは、Pythonコードの実行結果と会話の文脈全体を評価し、当初設定されたタスクが完了したかどうかを最終的に判断するAIエージェントです。
+            あなたは、実行されたタスクが**当初定義された成功条件**を満たしたかどうかを最終的に判断するAIエージェントです。
 
             あなたの主な役割は以下の通りです:
-            1.  **実行結果の確認:** `CodeExecutorAgent` から報告されるコード実行結果（成功/失敗、標準出力、標準エラー出力）を確認します。
-            2.  **目標との照合:** 会話履歴を参照し、`MineCraftPlannerAgent` が最初に設定したタスク目標や、その後の議論の流れを把握します。
-            3.  **完了判断:** 実行結果が、当初のタスク目標を達成しているかを慎重に評価します。単にコードがエラーなく実行されただけでは不十分な場合があります。例えば、特定のアイテムを収集するタスクであれば、インベントリにそのアイテムが目標数だけ存在するかを確認する必要があります。
-            4.  **完了報告:** タスクが完了したと判断した場合、その旨を明確に報告し、会話を終了させるために報告の最後に **必ず「タスク完了」というフレーズを含めてください。**
-            5.  **未完了報告と提案:** タスクが完了していないと判断した場合、その理由を具体的に説明します（例: 実行は成功したが目標とする状態ではない、必要なアイテム数が足りない、予期せぬ状態になった等）。そして、次に取るべきアクションについて他のエージェント（例: `MineCraftPlannerAgent` に計画修正を依頼、`CodeGeneratorAgent` に別のアプローチでのコード生成を依頼）に提案してください。
+            1.  **成功条件の把握:** 会話履歴、特に `MineCraftPlannerAgent` が提示した「**成功条件**」を正確に把握します。
+            2.  **実行結果の確認:** `CodeExecutorAgent` から報告されるコード実行結果（成功/失敗、標準出力、標準エラー出力）を確認します。
+            3.  **現状の確認 (必要に応じて):** コード実行結果だけでは成功条件を満たしたか判断できない場合（例: インベントリの変化を確認する必要がある、特定の位置にいるか確認する必要がある）、`BotStatusAgent` や `BotViewAgent` に問い合わせて現在のBotの状態を確認する必要があることを他のエージェントに提案できます。（ただし、あなた自身はツールを呼び出しません）
+            4.  **成功条件との照合:** コード実行結果と、必要に応じて確認した現在のBotの状態を、**当初定義された成功条件**と照合します。
+            5.  **完了判断:**
+                *   **成功:** 成功条件を満たしていると判断した場合、その旨を明確に報告し、会話を終了させるために報告の最後に **必ず「タスク完了」というフレーズを含めてください。**
+                *   **失敗:** 成功条件を満たしていないと判断した場合、その理由（どの条件が満たされていないか）を具体的に説明します。
+            6.  **次のアクション提案 (失敗時):** タスクが失敗した場合、次に取るべきアクションについて他のエージェント（例: `MineCraftPlannerAgent` に計画修正を依頼、`CodeDebuggerAgent` にエラーがないか確認依頼、`CodeGeneratorAgent` に別のアプローチでのコード生成を依頼）に提案してください。
 
-            あなたは最終的な「完了」または「未完了」の判断を下す重要な役割を担っています。他のエージェントの報告を鵜呑みにせず、常に当初の目標達成という観点から状況を評価してください。
+            あなたは最終的な「完了（成功条件達成）」または「未完了（成功条件未達）」の判断を下す重要な役割を担っています。常に `MineCraftPlannerAgent` が定義した**成功条件**を基準に評価してください。
             """
         )
     async def main(self,message:str) -> None:
@@ -267,6 +340,7 @@ class Auto_gen:
                 self.ProcessReviewerAgent,
                 self.SkillProviderAgent,
                 self.SkillCodeProviderAgent,
+                self.ExecutionHistoryAgent,
                 self.CodeGeneratorAgent,
                 self.CodeExecutorAgent,
                 self.CodeDebuggerAgent,
@@ -333,7 +407,11 @@ class Auto_gen:
             self._get_skill_summary_wrapper,
             description="Retrieves a concise list of available Minecraft Bot skill names and their brief descriptions (first line only). Useful for getting a quick overview of capabilities."
         )
-    
+        # Add the new execution history tool definition
+        self.get_code_execution_history_tool = FunctionTool(
+            self._get_code_execution_history_wrapper,
+            description="直近5回のコード実行履歴（実行コード、成功/失敗、出力、エラー）を新しい順に取得します。デバッグや計画の見直しに役立ちます。"
+        )
     async def get_skills_list(self) -> str:
         """Skillsクラスで利用可能な関数の情報を取得し、LLMが読みやすい形式の英語文字列で返す"""
         skills_list = await self.discovery.get_skills_list() # 新しい形式のリストを取得
@@ -563,5 +641,48 @@ class Auto_gen:
                  await browser.close()
             # OpenAI AsyncClient には明示的な close は不要
         
-    
+    # Add the new wrapper method for execution history
+    async def _get_code_execution_history_wrapper(self) -> str:
+        """Retrieves the last 5 code execution history entries and formats them for the LLM."""
+        print("\033[34mTool:GetCodeExecutionHistory called\033[0m")
+        history = self.discovery.code_execution_history
+
+        if not history:
+            return "No code execution history available yet."
+
+        output_parts = ["Code Execution History (most recent first):"]
+        # Iterate in reverse to show newest first (deque stores oldest first)
+        for i, entry in enumerate(reversed(history), 1):
+            code = entry.get('code', 'N/A')
+            result = entry.get('result', {})
+            success = result.get('success', False)
+            status = "Success" if success else "Failure"
+            output = result.get('output', '').strip()
+            error_output = result.get('error_output', '').strip()
+            error_msg = result.get('error', '')
+            traceback_str = result.get('traceback', '')
+
+            entry_str = [
+                f"--- Entry {i} ---",
+                f"Status: {status}",
+                "Executed Code:",
+                "```python",
+                code,
+                "```"
+            ]
+            if output:
+                entry_str.extend(["Standard Output:", "---", output, "---"])
+            if error_output:
+                entry_str.extend(["Standard Error Output:", "---", error_output, "---"])
+            if not success:
+                if error_msg:
+                    entry_str.append(f"Error Message: {error_msg}")
+                if traceback_str:
+                    entry_str.extend(["Traceback:", "---", traceback_str, "---"])
+            
+            output_parts.append("\n".join(entry_str))
+
+        # Join entries with double newline
+        return "\n\n".join(output_parts)
+        
         
