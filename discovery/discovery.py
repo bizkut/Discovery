@@ -12,6 +12,7 @@ import textwrap
 import io
 import contextlib
 import traceback
+import collections
 
 class Discovery:
     def __init__(self):
@@ -24,6 +25,7 @@ class Discovery:
         self.bot = None
         self.mcdata = None
         self.is_connected = False
+        self.code_execution_history = collections.deque(maxlen=5)
     
     def load_env(self):
         self.minecraft_host = os.getenv("MINECRAFT_HOST", "host.docker.internal")
@@ -512,7 +514,7 @@ async def {dynamic_async_func_name}():
             output = output_buffer.getvalue()
             error_output = error_buffer.getvalue()
 
-            return {
+            result = {
                 "success": True,
                 "output": output,
                 "error_output": error_output
@@ -528,12 +530,18 @@ async def {dynamic_async_func_name}():
 
             print(f"\033[31mコード実行中にエラーが発生しました: {error_message}\nエラー詳細:{tb_str}\n実行結果:{error_output_before_exception}\033[0m") # コンソールにもエラー表示
 
-            return {
+            result = {
                 "success": False,
                 "error": error_message,
                 "traceback": tb_str,
                 "error_output": error_output_before_exception
             }
+        
+        # --- 実行履歴の追加 --- (try/except の後)
+        self.code_execution_history.append({"code": code_string, "result": result})
+        # --- ここまで追加 ---
+        
+        return result
 
 async def run_craft_example():
     """Skillsクラスのcraft_recipeメソッドを使用する例"""
@@ -548,39 +556,20 @@ async def run_craft_example():
         return
     
     code = """
-# まずは最も近いoak_log（オークの原木）を探す
-oak_log_block = skills.get_nearest_block('oak_log')
+# オークの原木を収集するタスクをチャットなしで実行
+result = await skills.collect_block('oak_log', 3)
 
-if oak_log_block is None:
-    # oak_logが見つからなければspruce_log（トウヒの原木）も探す
-    spruce_log_block = skills.get_nearest_block('spruce_log')
-    if spruce_log_block is None:
-        # それも無ければ、他の原木も検討可能だがここでは探索失敗として例外を出す
-        raise Exception("周囲に採取可能な原木が見つかりません。森林バイオームへの移動などを検討してください。")
-    else:
-        target_block = spruce_log_block
-        target_block_name = 'spruce_log'
+# タスクの成功を確認
+if result['success']:
+    print(f"Task completed: Successfully collected {result['collected']} oak logs.")
 else:
-    target_block = oak_log_block
-    target_block_name = 'oak_log'
-
-# 見つかった原木の座標に移動（最小距離1で隣接まで移動）
-move_result = await skills.move_to_position(target_block.position.x, target_block.position.y, target_block.position.z, min_distance=1)
-
-if not move_result['success']:
-    raise Exception(f"{target_block_name}への移動に失敗しました。{move_result.get('message', '')}")
-
-# 移動成功後、その原木を3個収集する
-collect_result = await skills.collect_block(target_block_name, num=3)
-
-if not collect_result['success']:
-    raise Exception(f"{target_block_name}の収集に失敗しました。{collect_result.get('message', '')}")
+    print(f"Task failed: {result['message']}")
 """
     while True:
         try:
             print(input("Enter: "))
 
-            print(await discovery.get_skills_list())
+            print(await discovery.execute_python_code(code))
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
