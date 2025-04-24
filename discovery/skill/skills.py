@@ -1838,9 +1838,14 @@ class Skills:
             
             # パスを取得
             path = self.bot.pathfinder.getPathTo(movements,goal)
-            if path.status != "success":
-                result["message"] = f"目標位置に到達できる経路を生成できませんでした: {path.status}。目的地が水中にあるか、現在の装備では採掘出来ないブロックに阻まれています"
+            if path.status == "error":
+                result["message"] = f"目標位置に到達できる経路を生成できませんでした。目的地が水中・溶岩にあるか、現在の装備では採掘出来ないブロック・空間に阻まれています"
                 result["error"] = "path_not_found"
+                self.bot.chat(result["message"])
+                return result
+            elif path.status == "timeout":
+                result["message"] = f"パスの生成がタイムアウトしました。目標位置が遠すぎる可能性があります"
+                result["error"] = "path_timeout"
                 self.bot.chat(result["message"])
                 return result
             
