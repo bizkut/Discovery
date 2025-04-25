@@ -1,22 +1,29 @@
-# Fabric Mods Install
-In this tutorial, we will install the Fabric launcher and 5 mods. Remember to use the correct Fabric version that matches your game version (1.19) of all the mods. 
-1. You can download the latest Fabric Installer from [here](https://fabricmc.net/use/installer/). For Windows users, just download the `.exe` file. For Mac or Ubuntu users, download the jar file and call `java -jar fabric-installer-0.11.2.jar` to install. Select game version to be `1.19` and loader version to be `0.14.18`. It will automatically detect your Minecraft game install location.
-2. After installing Fabric, you will have a `YOUR_MINECRAFT_GAME_LOCATION/mods` folder. You need to put all the mods under this folder. Also, you will have a `YOUR_MINECRAFT_GAME_LOCATION/versions/fabric-loader-0.14.18-1.19`. This is the version you will run the game with. 
-3. Here are 4 mods that can be directly downloaded to `YOUR_MINECRAFT_GAME_LOCATION/mods` folder: 
-   * [Fabric API](https://modrinth.com/mod/fabric-api/version/0.58.0+1.19): Basic Fabric APIs.
-   * [Mod Menu](https://cdn.modrinth.com/data/mOgUt4GM/versions/4.0.4/modmenu-4.0.4.jar): Used to manage all the mods that you download.
-   * [Complete Config](https://www.curseforge.com/minecraft/mc-mods/completeconfig/download/3821056): Dependency of server pause.
-   * [Multi Server Pause](https://www.curseforge.com/minecraft/mc-mods/multiplayer-server-pause-fabric/download/3822586): Used to pause the server when waiting for GPT-4 to reply.
-4. For the last mod [Better Respawn](https://github.com/xieleo5/better-respawn/tree/1.19), you need to manually clone and compile.
-   
-   * After you clone the repo, remove the `'forge'` string in the last line of `settings.gradle`. Then run `gradlew build` to compile the mod. You will find the compiled jar file in `better-respawn/fabric/build/libs/better-respawn-fabric-1.19-2.0.0.jar`. Put the jar file to the mod folder.
-     * You will need a Java Runtime Environment v17+ to build `better-respawn`. Some newer JRE versions will error during build. Find the JRE v17 archive [here](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html).
-   * After you launch the game, go to `YOUR_MINECRAFT_GAME_LOCATION/config/better-respawn`, and modify the properties file with:
-      ```
-      respawn_block_range=32
-      max_respawn_distance=32
-      min_respawn_distance=0
-      ```
-5. Don't forget to change the `version` in `azure_login` to `fabric-loader-0.14.18-1.19` that you are using. You can find it under `YOUR_MINECRAFT_GAME_LOCATION/version` folder.
+# Minecraft Mod Install Guide
 
-You can return to [README.md](../README.md#getting-started) and getting started now.
+We recommend installing mods using Fabric to run Discovery.
+
+## Installing Fabric
+
+1. Download the installer from [Fabric](https://fabricmc.net/use/installer/) and install Fabric
+2. Run the downloaded executable file
+3. Select "Client" → Choose "1.19" for the Minecraft version (should support up to 1.20.6, but this is unconfirmed)
+4. Press "Install" to install Fabric.
+
+## Installing Mods
+
+1. Press "Win" + "R" to open "Run", enter "%appdata%" and press "OK".
+2. In the application folder, open ".minecraft" → "mods".
+3. Download the following mods and save them in the mods folder.
+
+   **Note: After opening the curseforge link, change "Files" "All Games Version" to your desired version (e.g., 1.19) and download the compatible jar file**
+   - [Fabric API](https://www.curseforge.com/minecraft/mc-mods/fabric-api)
+   - [CompleteConfig](https://www.curseforge.com/minecraft/mc-mods/completeconfig)
+   - [Mod Menu](https://www.curseforge.com/minecraft/mc-mods/modmenu)
+   - [Multiplayer Server Pause (Forge)](https://www.curseforge.com/minecraft/mc-mods/multiplayer-server-pause-forge)
+
+## Verification
+
+1. Launch the Minecraft launcher.
+2. If Fabric has been installed successfully, "Fabric-loader-your_version" will be displayed in the Minecraft Java Edition build selection.
+3. Select the Fabric build and press "Play". A warning will appear, but press "Play".
+4. If the mod installation is complete, it will start without problems. If errors occur, check the versions of the installed mods.
