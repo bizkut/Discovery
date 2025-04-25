@@ -20,6 +20,7 @@ from autogen.agentchat.contrib.img_utils import get_pil_image, pil_to_data_uri
 from autogen.agentchat.contrib.multimodal_conversable_agent import MultimodalConversableAgent
 from autogen.code_utils import content_str
 from autogen_core.tools import FunctionTool
+from autogen_core.models import ModelFamily
 
 class Auto_gen:
     def __init__(self,discovery: Discovery) -> None:
@@ -33,9 +34,34 @@ class Auto_gen:
         self.load_tool()
         self.load_agents()
 
+    def deepseek_client(self, model_name: str = "deepseek-reasoner") -> OpenAIChatCompletionClient:
+        """Creates an OpenAIChatCompletionClient configured for DeepSeek models."""
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise ValueError("DEEPSEEK_API_KEY environment variable is not set.")
+
+        # Based on DeepSeek API documentation and common capabilities
+        model_info = {
+            "vision": False,            # Assuming standard chat model, adjust if vision model is used
+            "function_calling": True,   # Supported according to DeepSeek docs
+            "json_output": True,        # Supported according to DeepSeek docs (check specific model if needed)
+            "structured_output": False, # Assuming not directly supported via Pydantic models in this client
+            "multiple_system_messages": True, # Assuming support, adjust if needed
+            "family": ModelFamily.UNKNOWN # Add the required family field
+        }
+
+        client = OpenAIChatCompletionClient(
+            model=model_name,
+            api_key=api_key,
+            base_url="https://api.deepseek.com", # From DeepSeek documentation
+            model_info=model_info
+        )
+        return client
+    
     def load_agents(self) -> None:
         self.model_client = OpenAIChatCompletionClient(model="gpt-4.1-2025-04-14")
         self.model_client_o1 = OpenAIChatCompletionClient(model="o1")
+        #self.model_client_deepseek = self.deepseek_client(model_name="deepseek-reasoner")
         
         self.BotStatusAgent = AssistantAgent(
             name="BotStatusAgent",
@@ -78,7 +104,7 @@ class Auto_gen:
         )
         self.MissionPlannerAgent = AssistantAgent(
             name="MissionPlannerAgent",
-            model_client=self.model_client,
+            model_client=self.model_client_o1,
             description="MinecraftのBotの状態をもとに、目標達成のためのタスクを立案するエージェント",
             system_message="""
             あなたは、マインクラフトを熟知した高度なAIエージェントであり、最終目標達成のための**検証可能なタスク**を立案するエージェントです。
