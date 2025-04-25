@@ -13,6 +13,8 @@ import io
 import contextlib
 import traceback
 import collections
+import base64
+from playwright.async_api import async_playwright
 
 class Discovery:
     def __init__(self):
@@ -26,6 +28,7 @@ class Discovery:
         self.mcdata = None
         self.is_connected = False
         self.code_execution_history = collections.deque(maxlen=5)
+        self.viewer = None
     
     def load_env(self):
         self.minecraft_host = os.getenv("MINECRAFT_HOST", "host.docker.internal")
@@ -58,12 +61,14 @@ class Discovery:
     def bot_join(self):
         """ボットをサーバーに接続します"""
         self.is_connected = False
+        # createBot 呼び出しがタイムアウトすることがあったため、タイムアウトを十分長く設定
+        # (javascript.proxy の仕様で keyword 引数 `timeout` を与えると、JS 呼び出し待ち時間を延長できる)
         self.bot = self.mineflayer.createBot({
             "host": self.minecraft_host,
             "port": self.minecraft_port,
             "username": "BOT",
             "version": self.minecraft_version
-        })
+        }, timeout=10000)  # 10 秒に延長
         
         # スポーン時の処理
         def handle_spawn(*args):
@@ -81,12 +86,22 @@ class Discovery:
             print("サーバー接続が終了しました")
             self.is_connected = False
         
-        # ビューアーを開く
-        def open_viewer():
-            self.viewer_module.mineflayer(self.bot, {
-                "firstPerson": True,
-                "port": int(self.prismarine_viewer_port)})
-            webbrowser.open(f'http://localhost:{self.prismarine_viewer_port}')
+        # ビューアーを開く (初回のみ)
+        if self.viewer is None:
+            try:
+                print(f"Starting Prismarine Viewer on port {self.prismarine_viewer_port}...")
+                self.viewer = self.viewer_module.mineflayer(self.bot, {
+                    "firstPerson": True,
+                    "port": int(self.prismarine_viewer_port)
+                })
+                # ブラウザ自動起動はコメントアウト (必要なら解除)
+                # webbrowser.open(f'http://localhost:{self.prismarine_viewer_port}')
+                print(f"Prismarine Viewer started successfully.")
+            except Exception as e:
+                print(f"Failed to start Prismarine Viewer: {e}")
+                self.viewer = None # 失敗したらNoneに戻す
+        else:
+            print("Prismarine Viewer already running.")
         
         # イベントリスナーを設定
         self.bot.once('spawn', handle_spawn)
@@ -94,7 +109,6 @@ class Discovery:
         self.bot.on('end', handle_end)
         self.mcdata = require("minecraft-data")(self.bot.version)
         self.load_plugins()
-        open_viewer()
 
     async def check_server_active(self, timeout=10):
         """
@@ -181,26 +195,114 @@ class Discovery:
             return {"active": False, "error": str(e)}
 
     def disconnect_bot(self):
-        """ボットをサーバーから切断します"""
-        if self.bot and self.is_connected:
-            try:
-                self.bot.quit() # または self.bot.end() を試す
-                print("ボットがサーバーから切断されました。")
-            except Exception as e:
-                print(f"ボットの切断中にエラーが発生しました: {e}")
-            finally:
-                self.is_connected = False
-                self.bot = None # 必要に応じてbotインスタンスもクリア
+        """ボットをサーバーから切断し、関連リソースを解放します"""
+        if self.bot:
+            # Web Inventory は bot の 'end' イベント内で自動的に stop() されるため、
+            # 明示的に stop() を呼び出すと二重停止となりエラーを誘発する。
+            # ここでは手動での停止を行わない。
+            # if hasattr(self.bot, 'webInventory') and hasattr(self.bot.webInventory, 'stop'):
+            #     ...
+            # Viewer を閉じる
+            if self.viewer and hasattr(self.viewer, 'close'):
+                try:
+                    self.viewer.close()
+                    print("Prismarine Viewer closed.")
+                    self.viewer = None # CloseしたのでNoneに戻す
+                except Exception as e:
+                    print(f"Error closing Prismarine Viewer: {e}")
+            # bot.viewerが存在し、closeメソッドがある場合も考慮
+            elif hasattr(self.bot, 'viewer') and hasattr(self.bot.viewer, 'close'):
+                 try:
+                     self.bot.viewer.close()
+                     print("Prismarine Viewer (bot.viewer) closed.")
+                     # self.bot.viewer = None # 必要に応じて
+                 except Exception as e:
+                     print(f"Error closing Prismarine Viewer (bot.viewer): {e}")
 
-    async def get_bot_status(self):
+            # 最後にボットを切断
+            if self.is_connected:
+                try:
+                    self.bot.quit()
+                    print("ボットがサーバーから切断されました。")
+                except Exception as e:
+                    print(f"ボットの切断中にエラーが発生しました: {e}")
+
+            # 状態をリセット
+            self.is_connected = False
+            self.bot = None
+            print("Bot instance and connection status cleared.")
+        else:
+            print("Bot is not initialized or already disconnected.")
+            self.is_connected = False #念のため
+            if self.viewer: # botがなくてもviewerが残っている可能性
+                try:
+                    if hasattr(self.viewer, 'close'): self.viewer.close()
+                    self.viewer = None
+                    print("Cleaned up lingering viewer instance.")
+                except Exception as e:
+                     print(f"Error closing lingering viewer: {e}")
+
+    async def reconnect_bot(self, timeout=15):
+        """
+        ボットをサーバーから切断し、再接続を試みます。
+
+        Args:
+            timeout (int): 再接続時のタイムアウト秒数
+
+        Returns:
+            bool: 再接続が成功したらTrue、失敗したらFalse
+        """
+        print("ボットを再接続しています...")
+        self.disconnect_bot() # 同期的に実行
+        print("ボットを切断しました")
+
+        # bot_join は同期的にボットの初期化を開始する
+        self.bot_join()
+        print("ボットを再接続しました")
+        # check_server_active で接続完了を待つ (awaitを使用)
+        print("再接続後のサーバー接続を確認しています...")
+        return await self.check_server_active(timeout=timeout)
+
+    async def get_bot_status(self, retry_count=0, max_retries=1):
         """ボットの状態と周辺情報（バイオーム、時間、体力、空腹度、エンティティ、インベントリ、ブロック分類）を取得"""
-        if not self.bot or not self.skills:
-            print("エラー: ボットまたはスキルが初期化されていません。")
+        # 接続状態とボットインスタンスの存在をより確実にチェック
+        if not self.bot or not self.is_connected:
+            print("エラー: ボットが接続されていないか、初期化されていません。")
+            # 再接続を試みるロジックを追加することも検討できるが、ここではNoneを返す
+            # raise Exception("ボットが接続されていないか、初期化されていません。")
             return None
-            
+        if not self.skills:
+            print("エラー: スキルが初期化されていません。")
+            # raise Exception("スキルが初期化されていません。")
+            return None
+
         try:
-            # --- ボットの基本情報を取得 ---
-            bot_entity = self.bot.entity
+            # --- ボットの基本情報を取得 --- 
+            try:
+                # entityへのアクセス前に再度接続を確認する（念のため）
+                if not self.is_connected:
+                     print("エラー: entityアクセス前に接続が切断されました。")
+                     raise Exception("entityアクセス前に接続が切断されました。")
+                bot_entity = self.bot.entity # ここでタイムアウトが発生する可能性がある
+            except Exception as e:
+                if "Timed out accessing 'entity'" in str(e) and retry_count < max_retries:
+                    print(f"\033[93mエンティティへのアクセスがタイムアウトしました。再接続を試みます... (試行 {retry_count + 1}/{max_retries})\033[0m")
+                    reconnected = await self.reconnect_bot()
+                    if reconnected:
+                        print("\033[92m再接続に成功しました。ステータス取得を再試行します。\033[0m")
+                        # 再帰呼び出しでリトライカウントを増やす
+                        return await self.get_bot_status(retry_count=retry_count + 1, max_retries=max_retries)
+                    else:
+                        print("\033[91m再接続に失敗しました。ステータス取得を中止します。\033[0m")
+                        return None # 再接続失敗時はNoneを返す
+                else:
+                    # タイムアウト以外のエラー、またはリトライ上限超過
+                    print(f"\033[91mエンティティ取得中に回復不能なエラーが発生しました（リトライ超過またはタイムアウト以外）: {e}\033[0m")
+                    import traceback
+                    traceback.print_exc()
+                    return None # エラー時はNoneを返す
+
+            # --- bot_entity を使用する以降の処理 --- 
             bot_pos_raw = bot_entity.position # Y座標はエンティティ基準
             bot_health = self.bot.health
             bot_food = self.bot.food
@@ -217,7 +319,8 @@ class Discovery:
             bot_y = bot_pos.y # y座標も追加
 
             # --- 周囲のブロックを取得 & 分類 ---
-            blocks = await self.skills.get_surrounding_blocks(
+            # _get_surrounding_blocks が await を必要とするか確認
+            blocks = await self.skills._get_surrounding_blocks(
                 position=bot_pos, # スキルの引数名に合わせる
                 x_distance=3,
                 y_distance=2,
@@ -298,7 +401,7 @@ class Discovery:
             return final_result
 
         except Exception as e:
-            print(f"ボットステータスの取得中にエラーが発生しました: {e}")
+            print(f"ボットステータスの取得中に予期せぬエラーが発生しました: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -456,10 +559,11 @@ class Discovery:
     
     async def execute_python_code(self, code_string: str):
         """渡されたPythonコード文字列を実行します（非同期対応）"""
-        # Check if bot and skills are initialized correctly
-        if not self.bot or not self.skills:
-            print("エラー: ボットまたはスキルが初期化されていません。")
-            return {"success": False, "error": "Bot or skills not initialized", "traceback": "", "output": "", "error_output": ""}
+        # Check if bot and skills are initialized correctly and bot is connected
+        if not self.bot or not self.skills or not self.is_connected:
+            error_msg = "エラー: ボットまたはスキルが初期化されていないか、サーバーに接続されていません。"
+            print(error_msg)
+            return {"success": False, "error": error_msg, "traceback": "", "output": "", "error_output": ""}
 
         output_buffer = io.StringIO()
         error_buffer = io.StringIO()
@@ -514,11 +618,12 @@ async def {dynamic_async_func_name}():
             output = output_buffer.getvalue()
             error_output = error_buffer.getvalue()
 
+            # # 最後にエラー防止の為リコネクトする -> 必要に応じて呼び出すように変更。コメントアウト。
+            # await self.reconnect_bot()
             result = {
                 "success": True,
                 "output": output,
                 "error_output": error_output
-                # executed_code はエラー時のみ
             }
 
         except Exception as e:
@@ -537,14 +642,73 @@ async def {dynamic_async_func_name}():
                 "error_output": error_output_before_exception
             }
         
-        # --- 実行履歴の追加 --- (try/except の後)
         self.code_execution_history.append({"code": code_string, "result": result})
-        # --- ここまで追加 ---
         
         return result
 
+    async def get_screenshot_base64(self, direction: str | None = None, width: int = 960, height: int = 540) -> str | None:
+        """
+        指定された方角を向いてから Prismarine Viewer のスクリーンショットを取得し、
+        Base64エンコードされた文字列として返します。
+
+        Args:
+            direction (str | None, optional): 向きたい方角 ('north', 'south', 'east', 'west', 'up', 'down' など)。Defaults to None.
+            width (int): スクリーンショットの幅。
+            height (int): スクリーンショットの高さ。
+
+        Returns:
+            str | None: Base64エンコードされたPNG画像文字列。エラー時はNone。
+        """
+        print(f"\033[34mCapturing screenshot from Prismarine Viewer (Direction: {direction or 'current'})...\033[0m")
+        if not self.is_server_active():
+            print("エラー: ボットが接続されていません。スクリーンショットを取得できません。")
+            return None
+
+        if direction:
+            if self.skills: # skills オブジェクトが初期化されているか確認
+                try:
+                    print(f"\033[34mLooking towards {direction}...\033[0m")
+                    look_result = await self.skills.look_at_direction(direction)
+                    if not look_result or not look_result.get("success", False):
+                         print(f"\033[93mWarning: Failed to look towards {direction}. Proceeding with current view. Message: {look_result.get('message', 'N/A') if look_result else 'N/A'}\033[0m")
+                    await asyncio.sleep(1) # 視点変更が反映されるのを待つ
+                except Exception as e:
+                     print(f"\033[93mWarning: Error occurred while trying to look towards {direction}: {e}. Proceeding with current view.\033[0m")
+            else:
+                 print("\033[93mWarning: Skills object not initialized. Cannot change direction.\033[0m")
+
+        url = f"http://localhost:{self.prismarine_viewer_port}"
+        browser = None # finallyブロックで参照できるよう初期化
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page(viewport={"width": width, "height": height})
+
+                await page.goto(url, wait_until="load", timeout=60000) # タイムアウトを60秒に延長
+                await page.wait_for_selector('canvas', timeout=30000) # canvasが現れるまで最大30秒待機
+                # 描画安定のため十分な待機時間を確保
+                await asyncio.sleep(5) # 必要に応じて調整
+
+                screenshot_bytes = await page.screenshot(type="png")
+                await browser.close() # スクリーンショット取得後すぐにブラウザを閉じる
+                browser = None # クローズしたことを示す
+
+                base64_image = base64.b64encode(screenshot_bytes).decode('utf-8')
+                print("\033[34mScreenshot captured and encoded successfully.\033[0m")
+                return base64_image
+
+        except Exception as e:
+            print(f"スクリーンショットの取得中にエラーが発生しました: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        finally:
+            if browser: # エラー発生時などでブラウザが開いたままの場合に閉じる
+                 print("エラー発生のため、ブラウザをクローズします。")
+                 await browser.close()
+
 async def run_craft_example():
-    """Skillsクラスのcraft_recipeメソッドを使用する例"""
+    """Skillsクラスのcraft_itemsメソッドを使用する例"""
     # Discoveryインスタンスを作成し、Skillsを初期化
     discovery = Discovery()
     await discovery.check_server_and_join()
@@ -556,20 +720,21 @@ async def run_craft_example():
         return
     
     code = """
-# オークの原木を収集するタスクをチャットなしで実行
-result = await skills.collect_block('oak_log', 3)
-
-# タスクの成功を確認
-if result['success']:
-    print(f"Task completed: Successfully collected {result['collected']} oak logs.")
-else:
-    print(f"Task failed: {result['message']}")
+# クラフトテーブルが不要な場合を考慮して既にクラフト済だが、念のためもう一度クラフトを試みる
+await skills.craft_items('stone_pickaxe', num=1)
+inventory = skills.get_inventory_counts()
+stone_pickaxe_count = inventory.get('stone_pickaxe', 0)
+print(f"クラフト後の石のツルハシ本数: {stone_pickaxe_count}")
 """
     while True:
         try:
             print(input("Enter: "))
-
-            print(await discovery.execute_python_code(code))
+            #await skills.move_to_position(76, 52, -110,0)
+            #print(await discovery.execute_python_code(code))
+            await discovery.reconnect_bot()
+            #wait skills.move_to_position(67, 63, -11,0)
+            #print(await skills.collect_block("diamond_ore"))
+            #await skills.move_to_position(67, 63, -11,0)
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
