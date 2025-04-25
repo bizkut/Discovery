@@ -195,52 +195,62 @@ class Discovery:
             return {"active": False, "error": str(e)}
 
     def disconnect_bot(self):
-        """ボットをサーバーから切断し、関連リソースを解放します"""
-        if self.bot:
-            # Web Inventory は bot の 'end' イベント内で自動的に stop() されるため、
-            # 明示的に stop() を呼び出すと二重停止となりエラーを誘発する。
-            # ここでは手動での停止を行わない。
-            # if hasattr(self.bot, 'webInventory') and hasattr(self.bot.webInventory, 'stop'):
-            #     ...
-            # Viewer を閉じる
-            if self.viewer and hasattr(self.viewer, 'close'):
-                try:
-                    self.viewer.close()
-                    print("Prismarine Viewer closed.")
-                    self.viewer = None # CloseしたのでNoneに戻す
-                except Exception as e:
-                    print(f"Error closing Prismarine Viewer: {e}")
-            # bot.viewerが存在し、closeメソッドがある場合も考慮
-            elif hasattr(self.bot, 'viewer') and hasattr(self.bot.viewer, 'close'):
-                 try:
-                     self.bot.viewer.close()
-                     print("Prismarine Viewer (bot.viewer) closed.")
-                     # self.bot.viewer = None # 必要に応じて
-                 except Exception as e:
-                     print(f"Error closing Prismarine Viewer (bot.viewer): {e}")
+        """ボットをサーバーから切断し、関連リソースを解放します。ボットが応答しない場合でも強制的に状態をリセットします。"""
+        print("Disconnecting bot and releasing resources...")
 
-            # 最後にボットを切断
-            if self.is_connected:
-                try:
-                    self.bot.quit()
-                    print("ボットがサーバーから切断されました。")
-                except Exception as e:
-                    print(f"ボットの切断中にエラーが発生しました: {e}")
+        original_bot = self.bot
+        original_viewer = self.viewer
 
-            # 状態をリセット
-            self.is_connected = False
-            self.bot = None
-            print("Bot instance and connection status cleared.")
-        else:
-            print("Bot is not initialized or already disconnected.")
-            self.is_connected = False #念のため
-            if self.viewer: # botがなくてもviewerが残っている可能性
+        # 最初にPython側の状態をリセット
+        self.bot = None
+        self.is_connected = False
+        self.viewer = None
+        print("Internal bot state reset.")
+
+        # --- クリーンアップ処理 (失敗しても続行) ---
+        # 元のViewerを閉じる試み
+        try:
+            # hasattrもタイムアウトする可能性があるためtryブロック内に含める
+            if original_viewer and hasattr(original_viewer, 'close'):
+                original_viewer.close()
+                print("Original Prismarine Viewer closed.")
+        except Exception as e:
+            print(f"Error closing original Prismarine Viewer (ignored): {e}")
+
+        # 元のbotオブジェクトに関連付けられたviewerを閉じる試み
+        try:
+            # hasattrやプロパティアクセスもtryブロック内に含める
+            if original_bot:
+                bot_viewer = None
+                # viewerプロパティへのアクセス試行もtry-except
                 try:
-                    if hasattr(self.viewer, 'close'): self.viewer.close()
-                    self.viewer = None
-                    print("Cleaned up lingering viewer instance.")
-                except Exception as e:
-                     print(f"Error closing lingering viewer: {e}")
+                    if hasattr(original_bot, 'viewer'):
+                         bot_viewer = original_bot.viewer
+                except Exception as e_getattr:
+                    print(f"Error accessing original_bot.viewer (ignored): {e_getattr}")
+
+                # viewerオブジェクトのclose試行もtry-except
+                try:
+                    if bot_viewer and hasattr(bot_viewer, 'close'):
+                        bot_viewer.close()
+                        print("Original Prismarine Viewer (bot.viewer) closed.")
+                except Exception as e_close:
+                     print(f"Error closing bot_viewer (ignored): {e_close}")
+        except Exception as e:
+            # botオブジェクト自体へのアクセス等で予期せぬエラーが出た場合
+            print(f"Error during bot.viewer cleanup (ignored): {e}")
+
+        # 元のボットを切断する試み
+        try:
+            # hasattrもタイムアウトする可能性があるためtryブロック内に含める
+            if original_bot and hasattr(original_bot, 'quit'):
+                 print("Attempting to quit original bot instance...")
+                 original_bot.quit()
+                 print("Original bot instance quit command sent.")
+        except Exception as e:
+            print(f"Error quitting original bot instance (ignored): {e}")
+
+        print("Bot disconnection process complete (cleanup attempted).")
 
     async def reconnect_bot(self, timeout=15):
         """
@@ -720,20 +730,20 @@ async def run_craft_example():
         return
     
     code = """
-# クラフトテーブルが不要な場合を考慮して既にクラフト済だが、念のためもう一度クラフトを試みる
-await skills.craft_items('stone_pickaxe', num=1)
-inventory = skills.get_inventory_counts()
-stone_pickaxe_count = inventory.get('stone_pickaxe', 0)
-print(f"クラフト後の石のツルハシ本数: {stone_pickaxe_count}")
+await skills.handle_connection_error()
 """
     while True:
         try:
             print(input("Enter: "))
             #await skills.move_to_position(76, 52, -110,0)
             #print(await discovery.execute_python_code(code))
-            await discovery.reconnect_bot()
             #wait skills.move_to_position(67, 63, -11,0)
-            #print(await skills.collect_block("diamond_ore"))
+            print("crafting_table")
+            print(await skills.craft_items('crafting_table', 1))
+            print("furnace")
+            print(await skills.craft_items('furnace', 1))
+            print("oak_planks")
+            print(await skills.craft_items('oak_planks', 1))
             #await skills.move_to_position(67, 63, -11,0)
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
