@@ -1767,13 +1767,14 @@ class Skills:
             print(f"ブロック名取得エラー: {e}")
             return []
         
-    async def move_to_position(self, x, y, z, min_distance=2, canDig=True,dontcreateflow=True,dontMineUnderFaillingBlock=True,dontMoveUnderLiquid=True):
+    async def move_to_position(self, x, y, z, min_distance=2, canDig=True,dontcreateflow=True,dontMineUnderFaillingBlock=True,dontMoveUnderLiquid=True, move_timeout=60): # タイムアウト引数を追加
         """
         指定された位置に移動します。
         現在位置と目標位置が十分に近い場合（min_distance以内）は移動をスキップします。
         移動中にスタックを検出した場合は、一時的な目標地点に移動して解消を試みます。
         パスを取得できない場合は、目標位置に到達できる経路を生成できませんでしたというメッセージを返します。
-        
+        指定時間内に移動が完了しない場合はタイムアウトします。
+
         Args:
             x (float): 移動先のX座標
             y (float): 移動先のY座標
@@ -1783,18 +1784,19 @@ class Skills:
             dontcreateflow (bool):  移動の障害となる液体ブロックに接触するブロックを掘らないかどうか。デフォルトはTrue
             dontMineUnderFaillingBlock (bool):砂などの落下ブロックの下で掘るのを許可するか。デフォルトはTrue
             dontMoveUnderLiquid (bool):移動先として指定された座標が、液体ブロックの場合、エラーを返すかどうか。デフォルトはTrue
-        
+            move_timeout (int): 移動のタイムアウト時間（秒）。デフォルトは60
+
         Returns:
             dict: 移動結果を含む辞書
                 - success (bool): 移動に成功した場合はTrue、失敗した場合はFalse
-                - error (str): 移動に失敗した場合のエラーコード(path_not_found, unexpected_error)
+                - error (str): 移動に失敗した場合のエラーコード(path_not_found, path_timeout, move_timeout, liquid_block, unexpected_error, move_failed)
                 - message (str): 移動結果のメッセージ
                 - position (dict): 移動後の座標 (例: {"x": 10, "y": 20, "z": 30})
         """
         self.bot.chat(f"{x}, {y}, {z}に移動します。")
         # 現在位置と目標位置を取得
         current_pos = self.bot.entity.position
-        
+
         result = {
             "success": False,
             "error": "",
@@ -1805,37 +1807,40 @@ class Skills:
                 "z": current_pos.z
             }
         }
-        
+
         # 現在位置と目標位置の距離を計算
-        distance_to_target = ((current_pos.x - x) ** 2 + 
-                             (current_pos.y - y) ** 2 + 
-                             (current_pos.z - z) ** 2) ** 0.5
-        
+        distance_to_target = ((current_pos.x - x) ** 2 +
+                              (current_pos.y - y) ** 2 +
+                              (current_pos.z - z) ** 2) ** 0.5
+
         # 既に目標位置に十分近い場合は移動をスキップ
         if distance_to_target <= min_distance:
             result["success"] = True
             result["message"] = f"既に目標位置 {x}, {y}, {z} の近く（{distance_to_target:.2f}ブロック）にいます。移動をスキップします。"
+            # positionを更新
+            result["position"] = { "x": current_pos.x, "y": current_pos.y, "z": current_pos.z }
             self.bot.chat(result["message"])
             return result
         if dontMoveUnderLiquid:
             Vec3 = require('vec3')
-            if self.bot.blockAt(Vec3(x, y, z)).name == 'water' or self.bot.blockAt(Vec3(x, y, z)).name == 'lava':
+            target_block = self.bot.blockAt(Vec3(x, y, z))
+            if target_block and (target_block.name == 'water' or target_block.name == 'lava'):
                 result["message"] = f"目標位置 {x}, {y}, {z} は液体ブロックです。溺れる・焼け死ぬ可能性があるため、移動を中止します。"
                 result["error"] = "liquid_block"
                 self.bot.chat(result["message"])
                 return result
-        
+
         try:
             # 目標位置を設定
             goal = self.pathfinder.goals.GoalNear(x, y, z, min_distance)
-            
+
             # パスファインダーの動きを設定
             movements = self.pathfinder.Movements(self.bot)
             movements.canDig = canDig
             movements.dontCreateFlow = dontcreateflow
             movements.dontMineUnderFaillingBlock = dontMineUnderFaillingBlock
             self.bot.pathfinder.setMovements(movements)
-            
+
             # パスを取得
             path = self.bot.pathfinder.getPathTo(movements,goal)
             if path.status == "error":
@@ -1848,20 +1853,36 @@ class Skills:
                 result["error"] = "path_timeout"
                 self.bot.chat(result["message"])
                 return result
-            
+
             # 目標に向かう
             self.bot.pathfinder.setGoal(goal)
-            await asyncio.sleep(1)
-            
+            await asyncio.sleep(1) # 移動開始を待つ
+
             last_position = None
             stuck_time = 0
             temp_free_space = None
+            move_start_time = asyncio.get_event_loop().time() # 移動開始時間を記録
 
             while self.bot.pathfinder.isMoving():
+                # --- タイムアウトチェック ---
+                current_time = asyncio.get_event_loop().time()
+                if (current_time - move_start_time) > move_timeout:
+                    self.bot.chat(f"移動がタイムアウトしました ({move_timeout}秒)。目的地をリセットします。")
+                    self.bot.pathfinder.setGoal(None, True) # 目的地をリセット
+                    await asyncio.sleep(0.1) # ゴールリセットの反映を待つ
+                    result["success"] = False
+                    result["message"] = f"移動がタイムアウトしました ({move_timeout}秒)。"
+                    result["error"] = "move_timeout"
+                    # 現在位置を記録
+                    current_pos_timeout = self.get_bot_position()
+                    result["position"] = { "x": current_pos_timeout[0], "y": current_pos_timeout[1], "z": current_pos_timeout[2] }
+                    return result
+                # --- ここまで追加 ---
+
                 mining = self.bot.pathfinder.isMining()
                 building = self.bot.pathfinder.isBuilding()
                 current_position = self.bot.entity.position
-                
+
                 # スタック検出ロジック
                 if not mining and not building:
                     if last_position and (
@@ -1872,46 +1893,70 @@ class Skills:
                         stuck_time += 1
                     else:
                         stuck_time = 0
-                    
+
                     # 2秒以上同じ位置でスタックしている場合
                     if stuck_time >= 2:
                         self.bot.chat("スタックを検出しました。解消を試みます。")
                         free_space = None
-                        distance = 100
-                        while free_space is None:
-                            free_space = self.get_nearest_free_space(X_size=1,Y_size=2,Z_size=1,distance=distance)
+                        search_distance = 100
+                        while free_space is None and search_distance < 500: # 無限ループ防止
+                            free_space = self.get_nearest_free_space(X_size=1,Y_size=2,Z_size=1,distance=search_distance)
                             if free_space:
                                 break
-                            distance += 100
-                        
+                            search_distance += 100
+
+                        if free_space is None:
+                            self.bot.chat("近くに一時退避できるスペースが見つかりません。移動を中断します。")
+                            self.bot.pathfinder.setGoal(None, True) # 目的地リセット
+                            await asyncio.sleep(0.1)
+                            result["success"] = False
+                            result["message"] = "スタック解消中に退避スペースが見つからず、移動を中断しました。"
+                            result["error"] = "stuck_no_space"
+                            current_pos_stuck = self.get_bot_position()
+                            result["position"] = { "x": current_pos_stuck[0], "y": current_pos_stuck[1], "z": current_pos_stuck[2] }
+                            return result
+
                         if temp_free_space and temp_free_space.x == free_space.x and temp_free_space.y == free_space.y and temp_free_space.z == free_space.z:
-                            # 一時的な移動で解消出来なければワープ
-                            self.bot.chat(f"/tp bot {free_space.x} {free_space.y} {free_space.z}")
+                            # 一時的な移動で解消出来なければワープ (これはBotの能力に依存、通常は推奨されない)
+                            # self.bot.chat(f"/tp bot {free_space.x} {free_space.y} {free_space.z}")
+                            self.bot.chat("一時退避を試みましたがスタックが解消できませんでした。移動を中断します。")
                             self.bot.pathfinder.setGoal(None, True)
+                            await asyncio.sleep(0.1)
+                            result["success"] = False
+                            result["message"] = "スタック解消に失敗しました。移動を中断します。"
+                            result["error"] = "stuck_unresolved"
+                            current_pos_stuck_fail = self.get_bot_position()
+                            result["position"] = { "x": current_pos_stuck_fail[0], "y": current_pos_stuck_fail[1], "z": current_pos_stuck_fail[2] }
+                            return result
                         else:
                             # 一時的な目標地点に移動
                             temp_goal = self.pathfinder.goals.GoalNear(free_space.x, free_space.y, free_space.z, 0)
                             self.bot.pathfinder.setGoal(temp_goal, True)
                             temp_free_space = free_space
-                            await asyncio.sleep(2)
-                        
+                            self.bot.chat(f"一時的に {free_space.x:.1f}, {free_space.y:.1f}, {free_space.z:.1f} へ移動します。")
+                            await asyncio.sleep(2) # 一時目標への移動を待つ
+
                         # 元の目標地点に再設定
                         self.bot.pathfinder.setGoal(goal, True)
+                        self.bot.chat("元の目標への移動を再開します。")
                         await asyncio.sleep(1)
                         stuck_time = 0
-                
+                        move_start_time = asyncio.get_event_loop().time() # スタック解消後、タイマーリセット
+
                 last_position = current_position
-                await asyncio.sleep(1)
-            
+                await asyncio.sleep(1) # ループのインターバル
+
+            # --- 移動完了後の処理 ---
             bot_x, bot_y, bot_z = self.get_bot_position()
-            # 目標位置との距離を計算
+            # 目標位置との距離を計算 (インデント修正)
             final_distance = ((bot_x - x) ** 2 + (bot_y - y) ** 2 + (bot_z - z) ** 2) ** 0.5
             if final_distance <= min_distance:
                 result["success"] = True
                 result["message"] = f"目標位置 {x}, {y}, {z} の {min_distance} ブロック以内に到達しました (距離: {final_distance:.2f})。"
             else:
+                # isMoving()がFalseでも距離が遠い場合 (パスの終点が目標から遠いなど)
                 result["success"] = False
-                result["message"] = f"目標位置 {x}, {y}, {z} に到達できませんでした。現在の位置は {bot_x}, {bot_y}, {bot_z} (目標までの距離: {final_distance:.2f}) です。"
+                result["message"] = f"移動は停止しましたが、目標位置 {x}, {y}, {z} に到達できませんでした。現在の位置は {bot_x:.1f}, {bot_y:.1f}, {bot_z:.1f} (目標までの距離: {final_distance:.2f}) です。"
                 result["error"] = "move_failed"
             result["position"] = {
                 "x": bot_x,
@@ -1919,14 +1964,21 @@ class Skills:
                 "z": bot_z
             }
             self.bot.chat(result["message"])
-            
+
         except Exception as e:
             result["message"] = f"移動中に予期せぬエラーが発生しました: {str(e)}"
             self.bot.chat(result["message"])
             import traceback
             traceback.print_exc()
             result["error"] = "unexpected_error"
-            
+            # エラー発生時の位置を記録
+            try:
+                error_pos = self.get_bot_position()
+                result["position"] = { "x": error_pos[0], "y": error_pos[1], "z": error_pos[2] }
+            except: # get_bot_positionも失敗する可能性
+                 result["position"] = {"x": None, "y": None, "z": None}
+
+
         return result
         
     async def smelt_item(self, item_name, num=1):
