@@ -418,7 +418,7 @@ class Skills:
         
         このメソッドは以下の処理を行います：
         1. 指定されたアイテムのレシピを検索します
-        2. 必要に応じてクラフティングテーブルを探すか設置します
+        2. 取得したレシピが、クラフトテーブルが必要な場合、クラフティングテーブルを探すか設置します
         3. 必要な材料がインベントリにあるか確認します
         4. クラフティングを実行します
         5. 作成したアイテムの結果と詳細を返します
@@ -452,11 +452,37 @@ class Skills:
             item_id = self._get_item_id(item_name)
             
             recipes = self.bot.recipesFor(item_id, None, num, None)
+            crafting_table_recipes = self.bot.recipesFor(item_id, None, num, True)
+            print(f"crafting_table_recipes: {crafting_table_recipes}")
+            print(f"recipes: {recipes}")
+            if not any(True for _ in recipes) and not any(True for _ in crafting_table_recipes):
+                # 材料不足の場合、必要な材料を調べる
+                required_materials = []
+                # レシピから必要な材料を取得
+                recipe_data = self.get_item_crafting_recipes(item_name)
+                if recipe_data and recipe_data[0]:
+                    recipe_dict = recipe_data[0][0]
+                    required_materials = [f"{key}: {value}" for key, value in recipe_dict.items()]
+                else:
+                    required_materials.append("レシピが見つかりません")
+                
+                error_msg = f"{str(item_name)}を作成するための材料が不足しています"
+                if required_materials:
+                    error_msg += f"。必要な材料: {', '.join(required_materials)}"
+                    
+                self.bot.chat(error_msg)
+                result["message"] = error_msg
+                result["error"] = "insufficient_materials"
+                
+                if placed_table:
+                    await self.collect_block('crafting_table', 1)
+                return result
+
             crafting_table = None
             crafting_table_range = 32
 
             # クラフティングテーブルが必要な場合
-            if not recipes or not any(True for _ in recipes):  # Proxyオブジェクトの空チェック
+            if not any(True for _ in recipes) and any(True for _ in crafting_table_recipes):  # Proxyオブジェクトの空チェック
                 recipes = self.bot.recipesFor(item_id, None, num, True)
                 if not recipes:
                     self.bot.chat(f"{str(item_name)}のレシピが見つかりません")
@@ -488,29 +514,6 @@ class Skills:
                 else:
                     # 近くに作業台がある場合は、レシピを取得
                     recipes = self.bot.recipesFor(item_id, None, 1, crafting_table)
-            
-            if not recipes or not any(True for _ in recipes):
-                # 材料不足の場合、必要な材料を調べる
-                required_materials = []
-                # レシピから必要な材料を取得
-                recipe_data = self.get_item_crafting_recipes(item_name)
-                if recipe_data and recipe_data[0]:
-                    recipe_dict = recipe_data[0][0]
-                    required_materials = [f"{key}: {value}" for key, value in recipe_dict.items()]
-                else:
-                    required_materials.append("レシピが見つかりません")
-                
-                error_msg = f"{str(item_name)}を作成するための材料が不足しています"
-                if required_materials:
-                    error_msg += f"。必要な材料: {', '.join(required_materials)}"
-                    
-                self.bot.chat(error_msg)
-                result["message"] = error_msg
-                result["error"] = "insufficient_materials"
-                
-                if placed_table:
-                    await self.collect_block('crafting_table', 1)
-                return result
                 
             # クラフティングテーブルまで移動
             if crafting_table and self.bot.entity.position.distanceTo(crafting_table.position) > 4:
