@@ -204,7 +204,7 @@ class Auto_gen:
                 self.get_skill_summary_tool, 
                 self.get_skills_list_tool
             ],
-            model_client=self.model_client,
+            model_client=self.model_client_o1,
             description="提案されたタスクを実行するためのPythonコードを生成し、即座に実行して結果を報告するエージェント",
             system_message="""
             あなたは、Minecraft Bot の操作を自動化するための Python コードを生成し、**即座に実行してその結果を客観的に報告する**専門のAIエージェントです。
