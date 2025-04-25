@@ -453,8 +453,6 @@ class Skills:
             
             recipes = self.bot.recipesFor(item_id, None, num, None)
             crafting_table_recipes = self.bot.recipesFor(item_id, None, num, True)
-            print(f"crafting_table_recipes: {crafting_table_recipes}")
-            print(f"recipes: {recipes}")
             if not any(True for _ in recipes) and not any(True for _ in crafting_table_recipes):
                 # 材料不足の場合、必要な材料を調べる
                 required_materials = []
