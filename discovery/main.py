@@ -18,7 +18,7 @@ class DiscoveryMain:
         if not server_active:
             print("サーバーに接続できないため、終了します")
             return
-        await self.auto_gen.main(message="貴方の目標は、ダイヤを3個集めることです。")
+        await self.auto_gen.main(message="貴方の目標は、ネザー要塞(Nether Fortress)を見つけることです。")
 
         # 終了時の処理（tryの外で実行）
         if self.discovery:
