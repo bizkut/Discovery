@@ -62,12 +62,9 @@ Discovery runs in Docker, providing a platform-independent setup.
 
 3. **Install Minecraft Mods (optional but recommended)**
 
-   While not required, installing these mods will make the Bot's operation more stable and easier to debug:
-   1. Install [Fabric Loader](https://fabricmc.io/use/installer/) (recommended: version compatible with 1.19.0)
-   2. Download and install the following mods to your Minecraft mods folder:
-      * [Fabric API](https://modrinth.com/mod/fabric-api) (check version compatibility)
-      * [Mod Menu](https://modrinth.com/mod/modmenu) (check version compatibility)
-      * Other debugging mods as needed
+   While not required, installing these mods will make the Bot's operation more stable and easier to debug.
+   Please refer to the following guide for installation instructions:
+   [fabric_mods_install.md](docs/fabric_mods_install.md)
 
 4. **Build and start the Docker container**
    ```bash
@@ -122,7 +119,7 @@ Once setup and customization are complete, you can run Discovery.
 2. **Run the AutoGen script**:
    Inside the container, run:
    ```bash
-   python -m discovery.autoggen # or python discovery/autoggen.py
+   python -m discovery.main # or python discovery/main.py
    ```
 
    This will start the AutoGen framework and initiate collaboration between agents:

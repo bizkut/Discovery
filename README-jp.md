@@ -51,7 +51,7 @@ DiscoveryはDocker上で動作し、プラットフォームに依存しない�
     # Minecraft接続情報 (Minecraftをホストマシンで実行する場合)
     MINECRAFT_PORT=25565 # MinecraftクライアントがLAN公開時に使用するポート (後で変更)
     MINECRAFT_HOST=host.docker.internal # Dockerからホストマシン上のMinecraftに接続する場合
-    MINECRAFT_VERSION=1.19.0 # Minecraftのバージョン
+    MINECRAFT_VERSION=1.19 # Minecraftのバージョン
 
     # Bot Viewer & Web Inventory Ports (変更可能)
     PRISMARINE_VIEWER_PORT=3000
@@ -62,11 +62,8 @@ DiscoveryはDocker上で動作し、プラットフォームに依存しない�
 3.  **Minecraftモッドのインストール (任意だが推奨)**
 
     必須ではありませんが、以下のModを導入するとBotの動作が安定し、デバッグが容易になります。
-    1.  [Fabric Loader](https://fabricmc.io/use/installer/)をインストール（推奨：バージョン1.19.0に対応するもの）
-    2.  Minecraftの`mods`フォルダに以下のModをダウンロード・インストール：
-        *   [Fabric API](https://modrinth.com/mod/fabric-api) (バージョン確認)
-        *   [Mod Menu](https://modrinth.com/mod/modmenu) (バージョン確認)
-        *   必要に応じて他のデバッグ用Modなど
+    インストール方法については以下を参照にしてください。
+    [fabric_mods_install.ja.md](https://github.com/Mega-Gorilla/Discovery/blob/main/docs/fabric_mods_install.ja.md)
 
 4.  **Dockerコンテナのビルドと起動**
     ```bash
@@ -120,7 +117,7 @@ AutoGenエージェントの動作は、主にシステムメッセージ（プ�
 2.  **AutoGenスクリプトの実行**:
     コンテナ内で以下のコマンドを実行します。
     ```bash
-    python -m discovery.autoggen # または python discovery/autoggen.py
+    python -m discovery.main # または python discovery/main.py
     ```
 
    これにより、AutoGenのフレームワークが起動し、各エージェントが連携してタスクを開始します。
