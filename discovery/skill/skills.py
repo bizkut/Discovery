@@ -1867,7 +1867,7 @@ class Skills:
                 # --- タイムアウトチェック ---
                 current_time = asyncio.get_event_loop().time()
                 if (current_time - move_start_time) > move_timeout:
-                    self.bot.chat(f"移動がタイムアウトしました ({move_timeout}秒)。目的地をリセットします。")
+                    self.bot.chat(f"移動がタイムアウトしました ({move_timeout}秒)。")
                     self.bot.pathfinder.setGoal(None, True) # 目的地をリセット
                     await asyncio.sleep(0.1) # ゴールリセットの反映を待つ
                     result["success"] = False
