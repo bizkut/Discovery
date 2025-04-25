@@ -1,9 +1,9 @@
 # Discovery: AutoGenによるカスタマイズ可能なMinecraftエージェント
-
 <div align="center">
 
 [English](README.md) | [日本語](README-jp.md)
 
+![MinecraftAI](https://github.com/Mega-Gorilla/Discovery/blob/main/images/MinecraftAI.png?raw=true)
 </div>
 
 ## Discoveryについて
