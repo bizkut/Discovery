@@ -3,12 +3,7 @@ javascript
 python-dotenv
 # minecraft_launcher_lib
 
-# fastapi
-fastapi
-uvicorn
-
-# LangFlow
-deep-translator
-pydantic>=2.0.0
-playwright
-b2sdk
+# LLM
+google-generativeai
+openai
+langchain

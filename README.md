@@ -1,4 +1,4 @@
-# Discovery: Customizable Minecraft Agent Model
+# Discovery: Customizable Minecraft Agent with AutoGen
 
 <div align="center">
 
@@ -8,31 +8,32 @@
 
 ## About Discovery
 
-Discovery is an advanced Minecraft agent model based on [MineDojo Voyager](https://github.com/MineDojo/Voyager), enhanced with [LangFlow](https://github.com/logspace-ai/langflow) integration to enable greater customization and flexibility. While Voyager pioneered LLM-powered embodied agents in Minecraft, Discovery takes this concept further by allowing researchers and developers to easily modify agent behaviors, adapt different LLM models, and create custom skill libraries through an intuitive flow-based interface.
+Discovery is a Minecraft automation agent that combines Bot control through [Mineflayer](https://github.com/PrismarineJS/mineflayer) with advanced task execution and customizability through the [AutoGen](https://github.com/microsoft/autogen) framework. Multiple AI agents (planner, code executor, debugger, etc.) work together to autonomously act within Minecraft to achieve user-defined goals.
 
 ### Key Features
 
-- **LangFlow Integration**: Visually design and customize agent behaviors without deep coding knowledge
-- **Model Flexibility**: Easily swap between different LLM providers (OpenAI, Anthropic, local models)
-- **Enhanced Customization**: Modify prompts, skills, and exploration strategies through a visual interface
-- **Docker Ready**: Simplified deployment with containerized environment
-- **Cross-Platform**: Works seamlessly on Windows, macOS, and Linux
+- **AutoGen Integration**: Multiple AI agents collaborate to plan, execute, and debug tasks.
+- **Mineflayer Based**: Uses the proven Mineflayer library to control the Minecraft Bot.
+- **Agent Customization**: Adjust behavior and roles by modifying agent prompts (in `discovery/autoggen.py`).
+- **Model Flexibility**: Utilize various LLM models supported by AutoGen (OpenAI, Google Gemini, etc.) configurable in the settings file.
+- **Docker Ready**: Easily set up and run in a containerized environment.
+- **Skill Expandability**: Extend Bot capabilities by adding Python functions to `discovery/skill/skills.py`.
 
 ## Docker Installation
 
-Discovery runs entirely in Docker, making setup simple and consistent across platforms.
+Discovery runs in Docker, providing a platform-independent setup.
 
 ### Prerequisites
 
 - [Docker](https://www.docker.com/products/docker-desktop/) and Docker Compose
-- Minecraft Java Edition (version 1.19.0)
-- OpenAI API key or other supported LLM provider credentials
+- Minecraft Java Edition (version 1.19.0 recommended)
+- OpenAI API key or credentials for other supported LLM providers
 
 ### Setup Instructions
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/[your-username]/Discovery.git
+   git clone https://github.com/Mega-Gorilla/Discovery.git
    cd Discovery
    ```
 
@@ -41,138 +42,106 @@ Discovery runs entirely in Docker, making setup simple and consistent across pla
    cp .env.example .env
    ```
    
-   Edit the `.env` file with your API keys and preferences:
-   ```
-   # Minecraft connection information
-   MINECRAFT_PORT=25565
-   MINECRAFT_HOST=host.docker.internal
-
-   # OpenAI API information
+   Edit the `.env` file with your API keys and Minecraft connection information:
+   ```dotenv
+   # LLM API Keys
    OPENAI_API_KEY=your_openai_api_key_here
+   GOOGLE_API_KEY=your_google_api_key_here # if needed
 
-   # Azure Minecraft authentication (if needed)
-   CLIENT_ID=your_client_id_here
-   REDIRECT_URL=https://127.0.0.1/auth-response
-   SECRET_VALUE=your_secret_value_here
+   # Minecraft connection information (if running Minecraft on host machine)
+   MINECRAFT_PORT=25565 # Port used by Minecraft client when open to LAN (change this later)
+   MINECRAFT_HOST=host.docker.internal # Connect to Minecraft on host machine from Docker
+   MINECRAFT_VERSION=1.19.0 # Minecraft version
+
+   # Bot Viewer & Web Inventory Ports (can be changed)
+   PRISMARINE_VIEWER_PORT=3000
+   WEB_INVENTORY_PORT=3001
    ```
+   **Note:** `MINECRAFT_PORT` will need to be **edited again later** to match the port number displayed when opening Minecraft to LAN.
 
-3. **Install Minecraft Mods**
-   
-   Discovery requires specific Fabric mods to function properly:
-   1. Install [Fabric Loader](https://fabricmc.io/use/installer/) (recommended: fabric-loader-0.14.18-1.19)
+3. **Install Minecraft Mods (optional but recommended)**
+
+   While not required, installing these mods will make the Bot's operation more stable and easier to debug:
+   1. Install [Fabric Loader](https://fabricmc.io/use/installer/) (recommended: version compatible with 1.19.0)
    2. Download and install the following mods to your Minecraft mods folder:
-      - [Fabric API](https://modrinth.com/mod/fabric-api/version/0.58.0+1.19)
-      - [Mod Menu](https://cdn.modrinth.com/data/mOgUt4GM/versions/4.0.4/modmenu-4.0.4.jar)
-      - [Complete Config](https://www.curseforge.com/minecraft/mc-mods/completeconfig/download/3821056)
-      - [Multi Server Pause](https://www.curseforge.com/minecraft/mc-mods/multiplayer-server-pause-fabric/download/3822586)
-      - [Better Respawn](https://github.com/xieleo5/better-respawn/tree/1.19) (requires manual build)
+      * [Fabric API](https://modrinth.com/mod/fabric-api) (check version compatibility)
+      * [Mod Menu](https://modrinth.com/mod/modmenu) (check version compatibility)
+      * Other debugging mods as needed
 
 4. **Build and start the Docker container**
    ```bash
-   docker-compose up -d
+   docker-compose up -d --build
    ```
    
-   This will:
-   - Build the Docker image with all necessary dependencies
-   - Start the container in the background
-   - Expose ports for LangFlow (7860), ChatUI (7850), and Minecraft (?)
+   This will build the Docker image with all necessary dependencies and start the container in the background.
 
-5. **Start Minecraft and enable LAN**
-   - Launch Minecraft client on your host machine with the Fabric profile
-   - Create a new world in Creative mode with Peaceful difficulty
-   - Press Esc, select "Open to LAN"
-   - Enable cheats and start the LAN world
-   - **Important**: Note down the port number displayed (e.g., "Local game hosted on port 55555")
+5. **Start Minecraft and open to LAN**
+   - Launch the Minecraft client on your host machine with the Fabric profile (if using mods) or vanilla.
+   - Create a new world in Creative mode with Peaceful difficulty (or load an existing one).
+   - Press Esc, select "Open to LAN".
+   - Enable cheats and click "Start LAN World".
+   - **Important**: Note the **port number** displayed in the chat (e.g., `Local game hosted on port 51234`).
 
-6. **Access the LangFlow interface**
-   
-   Start LangFlow by running:
-   ```bash
-   docker exec -it discovery python -m langflow run
-   ```
+6. **Update port number in `.env` file**
+   - Set the noted port number as the value for `MINECRAFT_PORT` in your `.env` file.
+   - **Restart the Docker container:**
+     ```bash
+     docker-compose restart discovery # where 'discovery' is the service name defined in docker-compose.yml
+     ```
 
-   Then open your browser and navigate to:
-   ```
-   http://localhost:7860
-   ```
-   
-   To load a workflow:
-   1. Click "New Flow" and select "blank flow"
-   2. Click the "🔽" (download) button at the top of the interface
-   3. Navigate to "Import" and select a JSON file from the `langflow_json` folder
-   4. The workflow will be loaded and ready for customization
+## Customizing Agents
 
-   This opens the LangFlow interface where you can customize and run your Discovery agent.
+You can customize the behavior of AutoGen agents primarily by modifying their system messages (prompts).
 
-7. **Run Discovery**
-   ```bash
-   docker exec -it discovery python3 run_devbox.py
-   ```
+1. **Edit prompts**:
+   - Open the `discovery/autoggen.py` file.
+   - Find the `load_agents` method containing definitions for each agent (`MineCraftPlannerAgent`, `CodeExecutionAgent`, `CodeDebuggerAgent`, etc.)
+   - Edit the content of the `system_message` parameter for each agent to modify its role, instructions, constraints, etc.
 
-   The agent will connect to your Minecraft world and begin operating according to your configured workflow.
+2. **Add skills**:
+   - To add new capabilities to the Bot, implement new Python methods (functions) in `discovery/skill/skills.py`.
+   - Update prompts or tool definitions in `autoggen.py` for `CodeExecutionAgent` or `CodeDebuggerAgent` as needed to recognize your new skills.
 
-## Using LangFlow to Customize Your Agent
-
-The LangFlow interface provides a visual environment to customize your agent's behavior:
-
-1. **Load a Base Workflow**
-   - Open the LangFlow interface at `http://localhost:7860`
-   - Click "New Flow" and select "blank flow"
-   - Click the "🔽" (download) button at the top
-   - Navigate to "Import" and select a JSON file from the `langflow_json` directory
-   - The base workflow will be loaded with all necessary components
-
-2. **Customize Components**
-   - Drag and connect nodes to modify the agent's behavior
-   - Double-click any node to adjust its parameters
-   - Customization options include:
-     - Exploration radius and strategies
-     - Skill priorities and execution rules
-     - LLM model selection and parameters
-     - Custom prompt templates
-
-3. **Deploy Your Agent**
-   - Once satisfied with your changes, click "Export"
-   - Save the modified JSON file, overwriting the previous version
-   - The updated workflow will be automatically loaded on the next Discovery run
+3. **Rebuild the container**:
+   - After changing Python code (`.py` files), rebuild the Docker container to reflect the changes:
+     ```bash
+     docker-compose up -d --build
+     ```
 
 ## Running Discovery
 
-After customizing your workflow in LangFlow, you can run Discovery:
+Once setup and customization are complete, you can run Discovery.
 
-1. **Execute run_devbox.py**
+1. **Access the terminal inside the container**:
    ```bash
-   docker exec -it discovery python3 run_devbox.py
+   docker-compose exec discovery /bin/bash
+   # or docker exec -it <container_id_or_name> /bin/bash
    ```
 
-   You will see output similar to:
-   ```
-   Minecraft connection information:
-   - Port: 59143  # ← Change this number to match your LAN port
-   - Minecraft host: host.docker.internal
-   - Mineflayer host: localhost (in container)
+2. **Run the AutoGen script**:
+   Inside the container, run:
+   ```bash
+   python -m discovery.autoggen # or python discovery/autoggen.py
    ```
 
-2. **Update Port Number**
-   - Stop the program (Ctrl+C)
-   - Edit `run_devbox.py` and change the `minecraft_port` value to match your LAN port
-   - Run the program again
+   This will start the AutoGen framework and initiate collaboration between agents:
+   - First, a connection to the Minecraft server will be established.
+   - Then, agents will begin a cycle of planning, code generation, execution, and debugging based on user-defined goals (currently defined in the `main` function of `autoggen.py`; may become interactively configurable in the future).
+   - The console will display messages from each agent and the results of code execution.
 
-The agent will automatically:
-1. Load the latest workflow configuration from your modified JSON
-2. Connect to your Minecraft world using the specified port
-3. Begin operating according to your customized behavior settings
+3. **Visual verification of the Bot (optional)**:
+   Prismarine Viewer will start on the port configured in your `.env` file (default: 3000). Access `http://localhost:3000` (or the IP of the machine running Docker) in your browser to see the Bot's perspective.
 
 ## Important Notes
 
-- The Minecraft client must be running on your host machine, not in Docker
-- Always start Minecraft and open to LAN **before** running Discovery
+- The Minecraft client must run on your host machine and be open to LAN.
+- Always start Minecraft, open to LAN, and update `MINECRAFT_PORT` in `.env` before running Discovery.
 - If connection issues occur, check:
   - Your firewall settings
-  - The MINECRAFT_PORT in your .env file matches the LAN port Minecraft is using
-  - Host settings in docker-compose.yml
-- Ensure mod versions match exactly as specified
-- Any changes made in LangFlow will be automatically applied on the next Discovery run
+  - That `MINECRAFT_PORT` in `.env` matches the LAN port Minecraft is using
+  - Docker network settings (whether `host.docker.internal` points to your host machine)
+- If using mods, ensure versions are compatible with your Minecraft client and Fabric Loader.
+- After changing AutoGen agent prompts, test to ensure they behave as expected.
 
 ## License
 

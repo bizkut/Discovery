@@ -1,0 +1,33 @@
+
+template: |
+  Nearby Blocks:
+  Front: {front_blocks}
+  Center: {center_blocks}
+  Back: {back_blocks}
+  Left: {left_blocks}
+  Right: {light_blocks}
+
+  Your Position: {your_position}
+  Nearby Entities: {nearby_entities}
+
+  Inventory: {inventory}
+  Chest: None
+  Health: {health}/20
+  Hunger: {hunger}/20
+  Biome: {biome}
+  Time Of Day: {time_of_day} / 23992
+    (朝: 0, 昼: 6000, 日没: 12000, 夜: 13000, 真夜中: 18000, 夜明け: 23000)
+
+input_variables:
+  - front_blocks
+  - center_blocks
+  - back_blocks
+  - left_blocks
+  - right_blocks
+  - your_position
+  - nearby_entities
+  - inventory
+  - health
+  - hunger
+  - biome
+  - time_of_day

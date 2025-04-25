@@ -5,6 +5,16 @@ import asyncio
 from skill.skills import Skills
 import webbrowser
 import sys
+import math
+import inspect
+import ast
+import textwrap
+import io
+import contextlib
+import traceback
+import collections
+import base64
+from playwright.async_api import async_playwright
 
 class Discovery:
     def __init__(self):
@@ -17,6 +27,8 @@ class Discovery:
         self.bot = None
         self.mcdata = None
         self.is_connected = False
+        self.code_execution_history = collections.deque(maxlen=5)
+        self.viewer = None
     
     def load_env(self):
         self.minecraft_host = os.getenv("MINECRAFT_HOST", "host.docker.internal")
@@ -49,12 +61,14 @@ class Discovery:
     def bot_join(self):
         """ボットをサーバーに接続します"""
         self.is_connected = False
+        # createBot 呼び出しがタイムアウトすることがあったため、タイムアウトを十分長く設定
+        # (javascript.proxy の仕様で keyword 引数 `timeout` を与えると、JS 呼び出し待ち時間を延長できる)
         self.bot = self.mineflayer.createBot({
             "host": self.minecraft_host,
             "port": self.minecraft_port,
             "username": "BOT",
             "version": self.minecraft_version
-        })
+        }, timeout=10000)  # 10 秒に延長
         
         # スポーン時の処理
         def handle_spawn(*args):
@@ -72,12 +86,22 @@ class Discovery:
             print("サーバー接続が終了しました")
             self.is_connected = False
         
-        # ビューアーを開く
-        def open_viewer():
-            self.viewer_module.mineflayer(self.bot, {
-                "firstPerson": True,
-                "port": int(self.prismarine_viewer_port)})
-            webbrowser.open(f'http://localhost:{self.prismarine_viewer_port}')
+        # ビューアーを開く (初回のみ)
+        if self.viewer is None:
+            try:
+                print(f"Starting Prismarine Viewer on port {self.prismarine_viewer_port}...")
+                self.viewer = self.viewer_module.mineflayer(self.bot, {
+                    "firstPerson": True,
+                    "port": int(self.prismarine_viewer_port)
+                })
+                # ブラウザ自動起動はコメントアウト (必要なら解除)
+                # webbrowser.open(f'http://localhost:{self.prismarine_viewer_port}')
+                print(f"Prismarine Viewer started successfully.")
+            except Exception as e:
+                print(f"Failed to start Prismarine Viewer: {e}")
+                self.viewer = None # 失敗したらNoneに戻す
+        else:
+            print("Prismarine Viewer already running.")
         
         # イベントリスナーを設定
         self.bot.once('spawn', handle_spawn)
@@ -85,7 +109,6 @@ class Discovery:
         self.bot.on('end', handle_end)
         self.mcdata = require("minecraft-data")(self.bot.version)
         self.load_plugins()
-        open_viewer()
 
     async def check_server_active(self, timeout=10):
         """
@@ -109,17 +132,33 @@ class Discovery:
             await asyncio.sleep(0.5)
             
         return True
-    
-    def bot_move(self, x, y, z):
-        self.bot.pathfinder.setMovements(self.movements)
-        self.bot.pathfinder.setGoal(self.pathfinder.goals.GoalNear(x, y, z, 1))
-        self.bot.chat("移動します")
         
-    def create_skills(self):
-        """Skillsクラスのインスタンスを作成して返します"""
-        if not self.bot:
-            self.bot_join()
-        return Skills(self)
+    async def check_server_and_join(self, timeout=15):
+        """
+        サーバー接続状態を確認し、接続できていればボットを召喚します
+        
+        Args:
+            timeout (int): 接続確認のタイムアウト秒数
+            
+        Returns:
+            bool: 接続とボット召喚が成功したらTrue、失敗したらFalse
+        """
+        print("Minecraftサーバーの接続状態を確認しています...")
+        
+        # サーバー接続状態確認
+        is_active = await self.check_server_active(timeout=timeout)
+        
+        if is_active:
+            print(f"✅ Minecraftサーバーは稼働中です！(バージョン: {self.bot.version})")
+            
+            # スキルのインスタンスを作成
+            self.skills = Skills(self)
+            print("ボットが正常に召喚されました")
+            return True
+        else:
+            print("❌ Minecraftサーバーに接続できませんでした")
+            print("サーバーが起動しているか確認してください")
+            return False
 
     def is_server_active(self):
         """
@@ -156,37 +195,546 @@ class Discovery:
             return {"active": False, "error": str(e)}
 
     def disconnect_bot(self):
-        """ボットをサーバーから切断します"""
-        if self.bot and self.is_connected:
+        """ボットをサーバーから切断し、関連リソースを解放します"""
+        if self.bot:
+            # Web Inventory は bot の 'end' イベント内で自動的に stop() されるため、
+            # 明示的に stop() を呼び出すと二重停止となりエラーを誘発する。
+            # ここでは手動での停止を行わない。
+            # if hasattr(self.bot, 'webInventory') and hasattr(self.bot.webInventory, 'stop'):
+            #     ...
+            # Viewer を閉じる
+            if self.viewer and hasattr(self.viewer, 'close'):
+                try:
+                    self.viewer.close()
+                    print("Prismarine Viewer closed.")
+                    self.viewer = None # CloseしたのでNoneに戻す
+                except Exception as e:
+                    print(f"Error closing Prismarine Viewer: {e}")
+            # bot.viewerが存在し、closeメソッドがある場合も考慮
+            elif hasattr(self.bot, 'viewer') and hasattr(self.bot.viewer, 'close'):
+                 try:
+                     self.bot.viewer.close()
+                     print("Prismarine Viewer (bot.viewer) closed.")
+                     # self.bot.viewer = None # 必要に応じて
+                 except Exception as e:
+                     print(f"Error closing Prismarine Viewer (bot.viewer): {e}")
+
+            # 最後にボットを切断
+            if self.is_connected:
+                try:
+                    self.bot.quit()
+                    print("ボットがサーバーから切断されました。")
+                except Exception as e:
+                    print(f"ボットの切断中にエラーが発生しました: {e}")
+
+            # 状態をリセット
+            self.is_connected = False
+            self.bot = None
+            print("Bot instance and connection status cleared.")
+        else:
+            print("Bot is not initialized or already disconnected.")
+            self.is_connected = False #念のため
+            if self.viewer: # botがなくてもviewerが残っている可能性
+                try:
+                    if hasattr(self.viewer, 'close'): self.viewer.close()
+                    self.viewer = None
+                    print("Cleaned up lingering viewer instance.")
+                except Exception as e:
+                     print(f"Error closing lingering viewer: {e}")
+
+    async def reconnect_bot(self, timeout=15):
+        """
+        ボットをサーバーから切断し、再接続を試みます。
+
+        Args:
+            timeout (int): 再接続時のタイムアウト秒数
+
+        Returns:
+            bool: 再接続が成功したらTrue、失敗したらFalse
+        """
+        print("ボットを再接続しています...")
+        self.disconnect_bot() # 同期的に実行
+        print("ボットを切断しました")
+
+        # bot_join は同期的にボットの初期化を開始する
+        self.bot_join()
+        print("ボットを再接続しました")
+        # check_server_active で接続完了を待つ (awaitを使用)
+        print("再接続後のサーバー接続を確認しています...")
+        return await self.check_server_active(timeout=timeout)
+
+    async def get_bot_status(self, retry_count=0, max_retries=1):
+        """ボットの状態と周辺情報（バイオーム、時間、体力、空腹度、エンティティ、インベントリ、ブロック分類）を取得"""
+        # 接続状態とボットインスタンスの存在をより確実にチェック
+        if not self.bot or not self.is_connected:
+            print("エラー: ボットが接続されていないか、初期化されていません。")
+            # 再接続を試みるロジックを追加することも検討できるが、ここではNoneを返す
+            # raise Exception("ボットが接続されていないか、初期化されていません。")
+            return None
+        if not self.skills:
+            print("エラー: スキルが初期化されていません。")
+            # raise Exception("スキルが初期化されていません。")
+            return None
+
+        try:
+            # --- ボットの基本情報を取得 --- 
             try:
-                self.bot.quit() # または self.bot.end() を試す
-                print("ボットがサーバーから切断されました。")
+                # entityへのアクセス前に再度接続を確認する（念のため）
+                if not self.is_connected:
+                     print("エラー: entityアクセス前に接続が切断されました。")
+                     raise Exception("entityアクセス前に接続が切断されました。")
+                bot_entity = self.bot.entity # ここでタイムアウトが発生する可能性がある
             except Exception as e:
-                print(f"ボットの切断中にエラーが発生しました: {e}")
-            finally:
-                self.is_connected = False
-                self.bot = None # 必要に応じてbotインスタンスもクリア
+                if "Timed out accessing 'entity'" in str(e) and retry_count < max_retries:
+                    print(f"\033[93mエンティティへのアクセスがタイムアウトしました。再接続を試みます... (試行 {retry_count + 1}/{max_retries})\033[0m")
+                    reconnected = await self.reconnect_bot()
+                    if reconnected:
+                        print("\033[92m再接続に成功しました。ステータス取得を再試行します。\033[0m")
+                        # 再帰呼び出しでリトライカウントを増やす
+                        return await self.get_bot_status(retry_count=retry_count + 1, max_retries=max_retries)
+                    else:
+                        print("\033[91m再接続に失敗しました。ステータス取得を中止します。\033[0m")
+                        return None # 再接続失敗時はNoneを返す
+                else:
+                    # タイムアウト以外のエラー、またはリトライ上限超過
+                    print(f"\033[91mエンティティ取得中に回復不能なエラーが発生しました（リトライ超過またはタイムアウト以外）: {e}\033[0m")
+                    import traceback
+                    traceback.print_exc()
+                    return None # エラー時はNoneを返す
+
+            # --- bot_entity を使用する以降の処理 --- 
+            bot_pos_raw = bot_entity.position # Y座標はエンティティ基準
+            bot_health = self.bot.health
+            bot_food = self.bot.food
+            bot_time = self.bot.time.timeOfDay
+
+            # ボットがいるブロックとバイオームを取得
+            center_block = self.bot.blockAt(bot_pos_raw)
+            #bottom_block = self.discovery.bot.blockAt(bot_pos_raw.offset(0, -1, 0))
+            bot_pos = center_block.position.offset(0, 1, 0)
+            bot_biome_id = self.bot.world.getBiome(bot_pos)
+            bot_biome_name = self.mcdata.biomes[str(bot_biome_id)]['name']
+            bot_x = bot_pos.x
+            bot_z = bot_pos.z
+            bot_y = bot_pos.y # y座標も追加
+
+            # --- 周囲のブロックを取得 & 分類 ---
+            # _get_surrounding_blocks が await を必要とするか確認
+            blocks = await self.skills._get_surrounding_blocks(
+                position=bot_pos, # スキルの引数名に合わせる
+                x_distance=3,
+                y_distance=2,
+                z_distance=3
+            )
+
+            # ブロック名をグループごとに一時的に格納
+            temp_grouped_block_names = {"group1": [], "group2": [], "group3": [], "group4": [], "group0": []}
+
+            if blocks:
+                for block in blocks:
+                    block_pos_dict = block.get('position')
+                    block_name = block.get('name')
+                    if not isinstance(block_pos_dict, dict) or block_name is None:
+                        continue
+
+                    block_x = block_pos_dict.get('x')
+                    block_z = block_pos_dict.get('z')
+                    if not isinstance(block_x, (int, float)) or not isinstance(block_z, (int, float)):
+                        continue
+
+                    dx = block_x - bot_x
+                    dz = block_z - bot_z
+
+                    if math.fabs(dx) < 1e-6 and math.fabs(dz) < 1e-6:
+                        temp_grouped_block_names["group0"].append(block_name)
+                    elif dz > 1e-6 and math.fabs(dx) <= dz + 1e-6:
+                        temp_grouped_block_names["group1"].append(block_name)
+                    elif dx > 1e-6 and math.fabs(dz) <= dx + 1e-6:
+                        temp_grouped_block_names["group2"].append(block_name)
+                    elif dz < -1e-6 and math.fabs(dx) <= math.fabs(dz) + 1e-6:
+                        temp_grouped_block_names["group3"].append(block_name)
+                    elif dx < -1e-6 and math.fabs(dz) <= math.fabs(dx) + 1e-6:
+                        temp_grouped_block_names["group4"].append(block_name)
+
+            # ブロック分類結果（重複除去とソート）
+            classified_blocks = {
+                "front_blocks": sorted(list(set(temp_grouped_block_names["group1"]))),
+                "right_blocks": sorted(list(set(temp_grouped_block_names["group2"]))),
+                "back_blocks": sorted(list(set(temp_grouped_block_names["group3"]))),
+                "left_blocks": sorted(list(set(temp_grouped_block_names["group4"]))),
+                "center_blocks": sorted(list(set(temp_grouped_block_names["group0"])))
+            }
+
+            # --- 近くのエンティティ情報を取得 ---
+            nearby_entities_info = []
+            # _get_nearby_entities は同期メソッドの可能性あり
+            nearby_entities_raw = self.skills._get_nearby_entities(max_distance=16) # 範囲は適宜調整
+            if nearby_entities_raw:
+                for entity in nearby_entities_raw:
+                    # 有効なエンティティ情報のみ抽出
+                    if hasattr(entity, 'name') and hasattr(entity, 'position') and entity.position:
+                        nearby_entities_info.append({
+                            "name": entity.name,
+                            "position": {
+                                "x": round(entity.position.x, 1), # 小数点以下第一位で四捨五入
+                                "y": round(entity.position.y, 1), # 小数点以下第一位で四捨五入
+                                "z": round(entity.position.z, 1)  # 小数点以下第一位で四捨五入
+                            }
+                        })
+
+            # --- インベントリ情報を取得 ---
+            inventory_info = {}
+            # get_inventory_counts は同期メソッド
+            inventory_info = self.skills.get_inventory_counts()
+
+            # --- 最終的なレスポンスを作成 ---
+            final_result = {
+                "biome": bot_biome_name,
+                "time_of_day": bot_time,
+                "health": bot_health,
+                "hunger": bot_food,
+                "bot_position": f"x={bot_x:.1f}, y={bot_y:.1f}, z={bot_z:.1f}",
+                "nearby_entities": nearby_entities_info,
+                "inventory": inventory_info,
+                **classified_blocks # ブロック分類結果を展開して結合
+            }
+            return final_result
+
+        except Exception as e:
+            print(f"ボットステータスの取得中に予期せぬエラーが発生しました: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        
+    async def get_skills_list(self):
+        """Skillsクラスで利用可能な関数（メソッド）の名前、説明、非同期フラグのリストを取得"""
+        if self.skills is None:
+            print("エラー: Skillsが初期化されていません")
+            return [] # 空のリストを返す
+
+        skill_list = []
+        # inspect.getmembersでskillsオブジェクトのメソッドを取得
+        for name, method in inspect.getmembers(self.skills, inspect.ismethod):
+            # アンダースコアで始まらない公開メソッドのみを対象とする
+            if not name.startswith('_'):
+                # docstringを取得し、整形
+                docstring = inspect.cleandoc(method.__doc__) if method.__doc__ else ""
+                description_lines = []
+                usage_lines = []
+                in_description = True
+                section_headers = ("Args:", "Arguments:", "Parameters:", "Returns:", "Yields:", "Raises:", "Attributes:")
+
+                if docstring:
+                    lines = docstring.splitlines()
+                    if lines:
+                        description_lines.append(lines[0]) # 最初の行は必ずdescription
+                        # 2行目以降を処理
+                        for i in range(1, len(lines)):
+                            line = lines[i]
+                            stripped_line = line.strip()
+                            # DescriptionとUsageの区切りを判定
+                            if in_description and (not stripped_line or stripped_line.startswith(section_headers)):
+                                in_description = False
+                            
+                            if in_description:
+                                description_lines.append(line)
+                            else:
+                                usage_lines.append(line)
+
+                description = "\n".join(description_lines).strip()
+                usage = "\n".join(usage_lines).strip()
+                if not description:
+                    description = "説明がありません。"
+                if not usage:
+                    usage = "-" # Usageがない場合はハイフン
+
+                # --- 関数シグネチャの取得 ---
+                try:
+                    source_lines = inspect.getsource(method).splitlines()
+                    # 最初の 'def' または 'async def' の行を取得
+                    signature_line = next((line for line in source_lines if line.strip().startswith(('def ', 'async def '))), None)
+                    if signature_line:
+                        # 末尾のコロンを除去
+                        signature = signature_line.strip().rstrip(':')
+                    else:
+                        # 見つからない場合はフォールバック
+                        signature = name
+                except (TypeError, OSError):
+                    # ソースコードが取得できない場合はフォールバック
+                    signature = name
+                # --- ここまで追加・変更 ---
+
+                skill_list.append({
+                    "name": signature, # name を signature に変更 (または両方含める)
+                    "description": description, # 分割した説明
+                    "usage": usage           # 分割した使い方
+                })
+
+        # 名前順にソートして返す (ソートキーも変更)
+        return sorted(skill_list, key=lambda x: x['name'])
+    
+    async def get_skill_code(self, skill_name: str):
+        """指定されたスキル関数のソースコードを取得 (docstring除外)"""
+        result = {
+            "success": False,
+            "message": ""
+        }
+        if self.skills is None:
+            result["message"] = "エラー: Skillsが初期化されていません"
+            return result
+
+        # skill_nameに対応するメソッドを取得
+        try:
+            method = getattr(self.skills, skill_name)
+        except AttributeError:
+            result["message"] = f"エラー: スキル関数 '{skill_name}' が見つかりません"
+            return result
+
+        # メソッドが呼び出し可能で、アンダースコアで始まらないことを確認
+        if not callable(method) or skill_name.startswith('_'):
+            result["message"] = f"エラー: スキル関数 '{skill_name}' が見つかりません、またはアクセスできません"
+            return result
+
+        # --- Docstringを除去するTransformer --- (関数内に定義)
+        class DocstringRemover(ast.NodeTransformer):
+            def _remove_docstring(self, node):
+                if not node.body:
+                    return
+                # 関数/クラス定義内の最初の式がdocstringであるか確認
+                if isinstance(node.body[0], ast.Expr):
+                    if isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str):
+                        # Docstring (Python 3.8+)
+                        node.body.pop(0)
+                    elif isinstance(node.body[0].value, ast.Str):
+                        # Docstring (Python 3.7 or earlier)
+                        node.body.pop(0)
+
+            def visit_FunctionDef(self, node):
+                self._remove_docstring(node)
+                self.generic_visit(node)
+                return node
+
+            def visit_AsyncFunctionDef(self, node):
+                self._remove_docstring(node)
+                self.generic_visit(node)
+                return node
+
+        # メソッドのソースコードを取得し、docstringを除去
+        try:
+            source_code = inspect.getsource(method)
+            # ソースコードのインデントを除去 (ASTパース前にdedentが必要)
+            dedented_source_code = textwrap.dedent(source_code)
+
+            # ASTにパース
+            tree = ast.parse(dedented_source_code)
+
+            # Docstringを削除するTransformerを適用
+            transformer = DocstringRemover()
+            new_tree = transformer.visit(tree)
+            ast.fix_missing_locations(new_tree) # Location情報を修正
+
+            # ASTをソースコード文字列に戻す (Python 3.9+)
+            # ast.unparse はインデントを再構築する
+            code_without_docstring = ast.unparse(new_tree)
+            result["success"] = True
+            result["message"] = code_without_docstring
+            return result
+
+        except (TypeError, OSError) as e:
+            # ソースコードが取得できない場合
+            result["message"] = f"エラー: スキル関数 '{skill_name}' のソースコードを取得できませんでした: {e}"
+            return result
+        except SyntaxError as e:
+            # AST パース失敗時のエラーハンドリング
+            result["message"] = f"エラー: スキル関数 '{skill_name}' のソースコードの解析に失敗しました: {e}"
+            return result
+        except AttributeError as e:
+            # ast.unparse がない場合のエラー (Python 3.9未満)
+            if "'module' object has no attribute 'unparse'" in str(e):
+                result["message"] = "エラー: この機能にはPython 3.9以上が必要です (ast.unparse)。"
+                return result
+            else:
+                result["message"] = f"エラー: 予期せぬエラーが発生しました: {e}"
+                return result
+    
+    async def execute_python_code(self, code_string: str):
+        """渡されたPythonコード文字列を実行します（非同期対応）"""
+        # Check if bot and skills are initialized correctly and bot is connected
+        if not self.bot or not self.skills or not self.is_connected:
+            error_msg = "エラー: ボットまたはスキルが初期化されていないか、サーバーに接続されていません。"
+            print(error_msg)
+            return {"success": False, "error": error_msg, "traceback": "", "output": "", "error_output": ""}
+
+        output_buffer = io.StringIO()
+        error_buffer = io.StringIO()
+
+        # 実行コンテキストに渡す変数 (botを追加)
+        bot = self.bot # エイリアス
+        skills = self.skills # エイリアス
+        discovery = self # エイリアス
+        exec_globals = {
+            "asyncio": asyncio,
+            "skills": skills,
+            "discovery": discovery,
+            "bot": bot,
+            "__builtins__": __builtins__ # これが含まれている点が重要
+        }
+
+        # 動的に生成する非同期ラッパー関数の名前
+        dynamic_async_func_name = "__dynamic_exec_async_code__"
+
+        # ユーザーコードを適切にインデント
+        indented_user_code = textwrap.indent(code_string, '    ')
+
+        # 非同期ラッパー関数のコード文字列を作成
+        wrapper_code = f"""
+import asyncio # ラッパー関数内で asyncio を利用可能にする
+
+async def {dynamic_async_func_name}():
+    # 実行コンテキストから skills, discovery, bot を参照
+    # (exec_globals で渡される)
+    # --- User Code Start ---
+{indented_user_code}
+    # --- User Code End ---
+"""
+
+        try:
+            # ラッパー関数を定義
+            exec(wrapper_code, exec_globals)
+
+            # 定義された非同期関数オブジェクトを取得
+            async_func_to_run = exec_globals.get(dynamic_async_func_name)
+
+            if async_func_to_run and inspect.iscoroutinefunction(async_func_to_run):
+                # 標準出力と標準エラーをキャプチャしながら非同期関数を実行
+                with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(error_buffer):
+                    await async_func_to_run()
+            else:
+                # 関数が正しく定義されなかった場合のエラー
+                error_message = f"Failed to define or find the async wrapper function '{dynamic_async_func_name}'.\n\n{wrapper_code}"
+                raise RuntimeError(error_message)
+
+            # 実行結果を取得
+            output = output_buffer.getvalue()
+            error_output = error_buffer.getvalue()
+
+            # # 最後にエラー防止の為リコネクトする -> 必要に応じて呼び出すように変更。コメントアウト。
+            # await self.reconnect_bot()
+            result = {
+                "success": True,
+                "output": output,
+                "error_output": error_output
+            }
+
+        except Exception as e:
+            # exec または await 中のエラーをキャプチャ
+            error_message = str(e)
+            tb_str = traceback.format_exc()
+            # エラー発生前のエラー出力も取得しておく
+            error_output_before_exception = error_buffer.getvalue()
+
+            print(f"\033[31mコード実行中にエラーが発生しました: {error_message}\nエラー詳細:{tb_str}\n実行結果:{error_output_before_exception}\033[0m") # コンソールにもエラー表示
+
+            result = {
+                "success": False,
+                "error": error_message,
+                "traceback": tb_str,
+                "error_output": error_output_before_exception
+            }
+        
+        self.code_execution_history.append({"code": code_string, "result": result})
+        
+        return result
+
+    async def get_screenshot_base64(self, direction: str | None = None, width: int = 960, height: int = 540) -> str | None:
+        """
+        指定された方角を向いてから Prismarine Viewer のスクリーンショットを取得し、
+        Base64エンコードされた文字列として返します。
+
+        Args:
+            direction (str | None, optional): 向きたい方角 ('north', 'south', 'east', 'west', 'up', 'down' など)。Defaults to None.
+            width (int): スクリーンショットの幅。
+            height (int): スクリーンショットの高さ。
+
+        Returns:
+            str | None: Base64エンコードされたPNG画像文字列。エラー時はNone。
+        """
+        print(f"\033[34mCapturing screenshot from Prismarine Viewer (Direction: {direction or 'current'})...\033[0m")
+        if not self.is_server_active():
+            print("エラー: ボットが接続されていません。スクリーンショットを取得できません。")
+            return None
+
+        if direction:
+            if self.skills: # skills オブジェクトが初期化されているか確認
+                try:
+                    print(f"\033[34mLooking towards {direction}...\033[0m")
+                    look_result = await self.skills.look_at_direction(direction)
+                    if not look_result or not look_result.get("success", False):
+                         print(f"\033[93mWarning: Failed to look towards {direction}. Proceeding with current view. Message: {look_result.get('message', 'N/A') if look_result else 'N/A'}\033[0m")
+                    await asyncio.sleep(1) # 視点変更が反映されるのを待つ
+                except Exception as e:
+                     print(f"\033[93mWarning: Error occurred while trying to look towards {direction}: {e}. Proceeding with current view.\033[0m")
+            else:
+                 print("\033[93mWarning: Skills object not initialized. Cannot change direction.\033[0m")
+
+        url = f"http://localhost:{self.prismarine_viewer_port}"
+        browser = None # finallyブロックで参照できるよう初期化
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page(viewport={"width": width, "height": height})
+
+                await page.goto(url, wait_until="load", timeout=60000) # タイムアウトを60秒に延長
+                await page.wait_for_selector('canvas', timeout=30000) # canvasが現れるまで最大30秒待機
+                # 描画安定のため十分な待機時間を確保
+                await asyncio.sleep(5) # 必要に応じて調整
+
+                screenshot_bytes = await page.screenshot(type="png")
+                await browser.close() # スクリーンショット取得後すぐにブラウザを閉じる
+                browser = None # クローズしたことを示す
+
+                base64_image = base64.b64encode(screenshot_bytes).decode('utf-8')
+                print("\033[34mScreenshot captured and encoded successfully.\033[0m")
+                return base64_image
+
+        except Exception as e:
+            print(f"スクリーンショットの取得中にエラーが発生しました: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        finally:
+            if browser: # エラー発生時などでブラウザが開いたままの場合に閉じる
+                 print("エラー発生のため、ブラウザをクローズします。")
+                 await browser.close()
 
 async def run_craft_example():
-    """Skillsクラスのcraft_recipeメソッドを使用する例"""
+    """Skillsクラスのcraft_itemsメソッドを使用する例"""
     # Discoveryインスタンスを作成し、Skillsを初期化
     discovery = Discovery()
-    discovery.bot_join()
-    skills = discovery.create_skills()
+    await discovery.check_server_and_join()
+    skills = discovery.skills
     # サーバーがアクティブか確認
     server_active = await discovery.check_server_active(timeout=15)
     if not server_active:
         print("サーバーに接続できません。終了します。")
         return
-        
+    
+    code = """
+# クラフトテーブルが不要な場合を考慮して既にクラフト済だが、念のためもう一度クラフトを試みる
+await skills.craft_items('stone_pickaxe', num=1)
+inventory = skills.get_inventory_counts()
+stone_pickaxe_count = inventory.get('stone_pickaxe', 0)
+print(f"クラフト後の石のツルハシ本数: {stone_pickaxe_count}")
+"""
     while True:
         try:
             print(input("Enter: "))
-            results = await skills.get_surrounding_blocks(x_distance=3, y_distance=3, z_distance=4)
-            #skills.test()
-            #print(await skills.move_to_position(9,-60,-8,canDig=False))
-            #print(await skills.move_to_position(9,-60,-30,canDig=False))
-            #print(await skills.move_to_position(9,-60,-8,canDig=False))
+            #await skills.move_to_position(76, 52, -110,0)
+            #print(await discovery.execute_python_code(code))
+            await discovery.reconnect_bot()
+            #wait skills.move_to_position(67, 63, -11,0)
+            #print(await skills.collect_block("diamond_ore"))
+            #await skills.move_to_position(67, 63, -11,0)
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
@@ -204,7 +752,6 @@ if __name__ == "__main__":
                 print("✅ Minecraftサーバーはアクティブです！")
                 # サーバーのバージョン情報表示
                 print(f"サーバーバージョン: {discovery.bot.version}")
-                print(f"プレイヤー数: {len(discovery.bot.players)}")
             else:
                 print("❌ Minecraftサーバーに接続できませんでした")
             return result

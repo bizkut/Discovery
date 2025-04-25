@@ -18,8 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── ③ Python パッケージ ──────────────────────────────────────────
-RUN pip install -U pip uv \
- && uv pip install --system langflow
+RUN pip install -U autogen-agentchat autogen-ext[openai] autogen-agentchat[lmm]~=0.2 autogen-agentchat[gemini]~=0.2
 
 WORKDIR /app
 COPY requirements.txt README.md ./
