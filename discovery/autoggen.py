@@ -79,7 +79,7 @@ class Auto_gen:
         self.MissionPlannerAgent = AssistantAgent(
             name="MissionPlannerAgent",
             model_client=self.model_client,
-            description="MinecraftのBotの状態をもとに、目標達成のためのタスクを立案するエージェント。",
+            description="MinecraftのBotの状態をもとに、目標達成のためのタスクを立案するエージェント",
             system_message="""
             あなたは、マインクラフトを熟知した高度なAIエージェントであり、最終目標達成のための**検証可能なタスク**を立案するエージェントです。
             あなたの主な役割は、ユーザーが設定した最終目標と、Minecraft Botの現在の状況（`BotStatusAgent`, `BotViewAgent` からの情報）、そして**過去の実行履歴**を分析し、目標達成に向けた**具体的で実行可能な単一のタスク**を提案することです。
@@ -130,7 +130,7 @@ class Auto_gen:
             name="ProcessReviewerAgent",
             tools=[self.get_skill_summary_tool],
             model_client=self.model_client,
-            description="提案されたタスクが、利用可能な関数や現在のBotの状態で実行可能かをレビューするエージェント。",
+            description="提案されたタスクが、利用可能な関数や現在のBotの状態で実行可能かをレビューするエージェント",
             system_message="""
             あなたは、提案されたタスクが、MineCraftBotにて実行可能かどうかを評価するエージェントです。
             他のエージェント（主に`MissionPlannerAgent`）から提案されたタスクを受け取り、Botが持つ能力（利用可能な関数）や現在の状況の観点からそのタスクが実行可能かどうかを評価します。
@@ -179,7 +179,7 @@ class Auto_gen:
                 self.get_skills_list_tool
             ],
             model_client=self.model_client,
-            description="提案されたタスクを実行するためのPythonコードを生成し、即座に実行して結果を報告するエージェント。",
+            description="提案されたタスクを実行するためのPythonコードを生成し、即座に実行して結果を報告するエージェント",
             system_message="""
             あなたは、Minecraft Bot の操作を自動化するための Python コードを生成し、**即座に実行してその結果を客観的に報告する**専門のAIエージェントです。
             あなたの役割は、提案されたタスクや行動ステップを分析し、`skills`、`bot` オブジェクトで利用可能なメソッドを組み合わせて Python コードを生成し、それを `execute_python_code` ツールで実行し、結果を報告することです。
@@ -226,9 +226,7 @@ class Auto_gen:
             *   `await skills.take_from_chest(item_name, num=-1)`
             """
         )
-        # --- SkillCodeProviderAgent と ExecutionHistoryAgent の定義を削除 ---
 
-        # --- CodeDebuggerAgent の定義を更新 ---
         self.CodeDebuggerAgent = AssistantAgent(
             name="CodeDebuggerAgent",
             tools=[ # 必要なツールを追加
@@ -237,7 +235,7 @@ class Auto_gen:
                 self.get_skill_code_tool
             ],
             model_client=self.model_client,
-            description="コード実行エラーを分析し、実行履歴やスキル情報をツールで確認しながらデバッグと修正案の提案を行います。",
+            description="コード実行エラーを分析し、実行履歴やスキル情報をツールで確認しながらデバッグと修正案の提案を行います",
             system_message="""
             あなたは、Python コードのデバッグと問題解決を支援する、**高度な分析能力を持つ** AI アシスタントです。
             `CodeExecutionAgent` から Python コード実行時のエラーが報告された場合、以下の手順に従ってデバッグを主導してください。
