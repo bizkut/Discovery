@@ -76,8 +76,8 @@ class Auto_gen:
             - You must always provide answers in English.
             """
         )
-        self.MineCraftPlannerAgent = AssistantAgent(
-            name="MineCraftPlannerAgent",
+        self.MissionPlannerAgent = AssistantAgent(
+            name="MissionPlannerAgent",
             model_client=self.model_client,
             description="MinecraftのBotの状態をもとに、目標達成のためのタスクを立案するエージェント。",
             system_message="""
@@ -133,7 +133,7 @@ class Auto_gen:
             description="提案されたタスクが、利用可能な関数や現在のBotの状態で実行可能かをレビューするエージェント。",
             system_message="""
             あなたは、提案されたタスクが、MineCraftBotにて実行可能かどうかを評価するエージェントです。
-            他のエージェント（主に`MineCraftPlannerAgent`）から提案されたタスクを受け取り、Botが持つ能力（利用可能な関数）や現在の状況の観点からそのタスクが実行可能かどうかを評価します。
+            他のエージェント（主に`MissionPlannerAgent`）から提案されたタスクを受け取り、Botが持つ能力（利用可能な関数）や現在の状況の観点からそのタスクが実行可能かどうかを評価します。
 
             **利用可能なツール:**
             - `get_skill_summary_tool`: 利用可能な高レベルスキル（関数）の名前と簡単な説明の一覧を取得します。
@@ -159,16 +159,16 @@ class Auto_gen:
             あなたは、実行されたタスクが**当初定義された成功条件**を満たしたかどうかを最終的に判断するAIエージェントです。
 
             あなたの主な役割は以下の通りです:
-            1.  **成功条件の把握:** 会話履歴、特に `MineCraftPlannerAgent` が提示した「**成功条件**」を正確に把握します。
+            1.  **成功条件の把握:** 会話履歴、特に `MissionPlannerAgent` が提示した「**成功条件**」を正確に把握します。
             2.  **実行結果の確認:** `CodeExecutionAgent` から報告されるコード実行結果（成功/失敗、標準出力、標準エラー出力）を確認します。
             3.  **最新状態の取得:** **必ず `BotStatusAgent` に問い合わせて、現在のBotの最新の状態（インベントリ、体力、位置など、成功条件の評価に必要な情報）を取得してください。** コード実行後のBotの状態は変化している可能性が高いため、このステップは必須です。
             4.  **成功条件との照合:** 取得した**最新のBot状態**と、`CodeExecutionAgent` からの**実行結果**を、**当初定義された成功条件**と照合します。
             5.  **完了判断:** 照合結果に基づいて、タスクが完了したか判断します。
                  *   **成功:** 成功条件を満たしていると判断した場合、その旨を明確に報告し、会話を終了させるために報告の最後に **必ず「タスク完了」というフレーズを含めてください。**
                  *   **失敗:** 成功条件を満たしていないと判断した場合、その理由（どの条件が満たされていないか、現在の状態はどうなっているか）を具体的に説明します。
-            6.  **次のアクション提案 (失敗時):** タスクが失敗した場合、次に取るべきアクションについて他のエージェント（例: `MineCraftPlannerAgent` に計画修正を依頼、`CodeDebuggerAgent` にエラーがないか確認依頼、`CodeExecutionAgent` に別のアプローチでのコード生成を依頼）に提案してください。
+            6.  **次のアクション提案 (失敗時):** タスクが失敗した場合、次に取るべきアクションについて他のエージェント（例: `MissionPlannerAgent` に計画修正を依頼、`CodeDebuggerAgent` にエラーがないか確認依頼、`CodeExecutionAgent` に別のアプローチでのコード生成を依頼）に提案してください。
 
-            あなたは最終的な「完了（成功条件達成）」または「未完了（成功条件未達）」の判断を下す重要な役割を担っています。**判断前には必ず `BotStatusAgent` を呼び出して最新の状態を確認し**、常に `MineCraftPlannerAgent` が定義した**成功条件**を基準に評価してください。
+            あなたは最終的な「完了（成功条件達成）」または「未完了（成功条件未達）」の判断を下す重要な役割を担っています。**判断前には必ず `BotStatusAgent` を呼び出して最新の状態を確認し**、常に `MissionPlannerAgent` が定義した**成功条件**を基準に評価してください。
             """
         )
         self.CodeExecutionAgent = AssistantAgent(
@@ -209,7 +209,7 @@ class Auto_gen:
 
             **エラー発生時の対応:**
             - 実行が失敗した場合（`success: False`）、報告されたエラー情報（エラーメッセージ、トレースバック、エラー発生前の標準エラー出力）を**詳細かつ正確に**報告してください。
-            - その後、`CodeDebuggerAgent` に分析を依頼するか、`MineCraftPlannerAgent` に計画修正を依頼することを提案してください。
+            - その後、`CodeDebuggerAgent` に分析を依頼するか、`MissionPlannerAgent` に計画修正を依頼することを提案してください。
 
             **利用可能な主要スキル (`skills` オブジェクト) - 確認用の例:**
             (利用前には必ず `get_skill_summary_tool` or `get_skills_list_tool` で確認してください)
@@ -250,7 +250,7 @@ class Auto_gen:
             **重要:** エラーが発生した場合でも、エラー発生箇所より前のコードは実行されている可能性があります。これにより、意図せずタスク目標が達成されている、あるいは目標に近い状態になっている可能性があります。
 
             **対応手順:**
-            1.  **現状確認の提案:** まず、エラーが発生したものの、Botの現状を確認する必要があることを指摘してください。具体的には、`CodeExecutionAgent` に対し `BotStatusAgent` や `BotViewAgent` を使用して現在のBotの状態（インベントリ、位置、周囲の状況など）を確認し、当初のタスク目標 (`MineCraftPlannerAgent` が設定）と比較するように依頼します。
+            1.  **現状確認の提案:** まず、エラーが発生したものの、Botの現状を確認する必要があることを指摘してください。具体的には、`CodeExecutionAgent` に対し `BotStatusAgent` や `BotViewAgent` を使用して現在のBotの状態（インベントリ、位置、周囲の状況など）を確認し、当初のタスク目標 (`MissionPlannerAgent` が設定）と比較するように依頼します。
             2.  **完了判断の委任:** 次に、現状確認の結果をもとに、**タスクが完了したかどうかの最終判断は `TaskCompletionAgent` に委ねるべきである**ことを明確に提案してください。あなたは完了判断を行いません。
             3.  **デバッグの必要性:** `TaskCompletionAgent` がタスク未完了と判断した場合にのみ、以下のデバッグプロセスに進むことを示唆してください。
             4.  **エラー分析 (タスク未完了時):** ここからがデバッグの本番です。あなたの高度な分析能力と利用可能なツールを最大限に活用してください。
@@ -287,7 +287,7 @@ class Auto_gen:
             participants= [
                 self.BotStatusAgent,
                 self.BotViewAgent,
-                self.MineCraftPlannerAgent,
+                self.MissionPlannerAgent,
                 self.ProcessReviewerAgent,
                 self.CodeExecutionAgent,
                 self.CodeDebuggerAgent,
