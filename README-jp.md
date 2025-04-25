@@ -1,4 +1,4 @@
-# Discovery: カスタマイズ可能なMinecraftエージェントモデル
+# Discovery: AutoGenによるカスタマイズ可能なMinecraftエージェント
 
 <div align="center">
 
@@ -8,162 +8,139 @@
 
 ## Discoveryについて
 
-Discoveryは、[MineDojo Voyager](https://github.com/MineDojo/Voyager)をベースに開発された、[LangFlow](https://github.com/logspace-ai/langflow)統合により高度なカスタマイズ性を実現したMinecraftエージェントモデルです。Voyagerが先駆的なLLMを活用したMinecraftエージェントである一方、Discoveryはさらに一歩進んで、研究者や開発者がフロー型インターフェースを通じてエージェントの動作、異なるLLMモデルの適用、カスタムスキルライブラリの作成を容易に行えるようにしました。
+Discoveryは、Minecraftの自動操作エージェントであり、[Mineflayer](https://github.com/PrismarineJS/mineflayer)によるBot操作と[AutoGen](https://github.com/microsoft/autogen)フレームワークによる高度なタスク実行・カスタマイズ性を組み合わせています。複数のAIエージェント（プランナー、コード実行、デバッガーなど）が連携し、ユーザーが設定した目標を達成するためにMinecraft内で自律的に行動します。
 
 ### 主な特徴
 
-- **LangFlow統合**: コーディングの深い知識なしで、視覚的にエージェントの動作をデザイン・カスタマイズ可能
-- **モデルの柔軟性**: OpenAI、Anthropic、ローカルモデルなど、様々なLLMプロバイダーを簡単に切り替え可能
-- **拡張されたカスタマイズ機能**: プロンプト、スキル、探索戦略を視覚的インターフェースで修正可能
-- **Docker対応**: コンテナ化された環境で簡単にデプロイ
-- **クロスプラットフォーム**: Windows、macOS、Linuxで一貫した動作を保証
+- **AutoGen統合**: 複数のAIエージェントが協調してタスクを計画、実行、デバッグします。
+- **Mineflayerベース**: 実績のあるMineflayerライブラリを使用してMinecraft Botを操作します。
+- **エージェントカスタマイズ**: 各エージェントのプロンプト (`discovery/autoggen.py` 内) を変更することで、動作や役割を調整可能。
+- **モデルの柔軟性**: OpenAI、Google Geminiなど、AutoGenがサポートする様々なLLMモデルを利用可能（設定ファイルで変更）。
+- **Docker対応**: コンテナ化された環境で簡単にセットアップ・実行。
+- **スキル拡張性**: `discovery/skill/skills.py` にPython関数を追加することで、Botの能力を拡張可能。
 
 ## Dockerでのインストール
 
-Discoveryは完全にDocker上で動作し、プラットフォームに依存しない一貫したセットアップを実現します。
+DiscoveryはDocker上で動作し、プラットフォームに依存しないセットアップを実現します。
 
 ### 前提条件
 
 - [Docker](https://www.docker.com/products/docker-desktop/)とDocker Compose
-- Minecraft Java Edition（バージョン1.19.0）
-- OpenAI APIキーまたは他の対応LLMプロバイダーの認証情報
+- Minecraft Java Edition（バージョン1.19.0推奨）
+- OpenAI APIキーまたは他の対応LLMプロバイダーのAPIキー
 
 ### セットアップ手順
 
-1. **リポジトリのクローン**
-   ```bash
-   git clone https://github.com/[your-username]/Discovery.git
-   cd Discovery
-   ```
+1.  **リポジトリのクローン**
+    ```bash
+    git clone https://github.com/Mega-Gorilla/Discovery.git
+    cd Discovery
+    ```
 
-2. **環境変数の設定**
-   ```bash
-   cp .env.example .env
-   ```
-   
-   `.env`ファイルを編集し、APIキーと設定を入力：
-   ```
-   # Minecraft接続情報
-   MINECRAFT_PORT=25565
-   MINECRAFT_HOST=host.docker.internal
+2.  **環境変数の設定**
+    ```bash
+    cp .env.example .env
+    ```
 
-   # OpenAI API情報
-   OPENAI_API_KEY=your_openai_api_key_here
+    `.env`ファイルを編集し、APIキーとMinecraft接続情報を入力します。
+    ```dotenv
+    # LLM API Keys
+    OPENAI_API_KEY=your_openai_api_key_here
+    GOOGLE_API_KEY=your_google_api_key_here # 必要に応じて
 
-   # Azure Minecraft認証情報（必要な場合）
-   CLIENT_ID=your_client_id_here
-   REDIRECT_URL=https://127.0.0.1/auth-response
-   SECRET_VALUE=your_secret_value_here
-   ```
+    # Minecraft接続情報 (Minecraftをホストマシンで実行する場合)
+    MINECRAFT_PORT=25565 # MinecraftクライアントがLAN公開時に使用するポート (後で変更)
+    MINECRAFT_HOST=host.docker.internal # Dockerからホストマシン上のMinecraftに接続する場合
+    MINECRAFT_VERSION=1.19.0 # Minecraftのバージョン
 
-3. **Minecraftモッドのインストール**
-   
-   Discoveryには特定のFabricモッドが必要です：
-   1. [Fabric Loader](https://fabricmc.io/use/installer/)をインストール（推奨：fabric-loader-0.14.18-1.19）
-   2. 以下のモッドをMinecraftのmodsフォルダにダウンロード・インストール：
-      - [Fabric API](https://modrinth.com/mod/fabric-api/version/0.58.0+1.19)
-      - [Mod Menu](https://cdn.modrinth.com/data/mOgUt4GM/versions/4.0.4/modmenu-4.0.4.jar)
-      - [Complete Config](https://www.curseforge.com/minecraft/mc-mods/completeconfig/download/3821056)
-      - [Multi Server Pause](https://www.curseforge.com/minecraft/mc-mods/multiplayer-server-pause-fabric/download/3822586)
-      - [Better Respawn](https://github.com/xieleo5/better-respawn/tree/1.19)（手動ビルドが必要）
+    # Bot Viewer & Web Inventory Ports (変更可能)
+    PRISMARINE_VIEWER_PORT=3000
+    WEB_INVENTORY_PORT=3001
+    ```
+    **注意:** `MINECRAFT_PORT` は、後述するMinecraftのLAN公開時に表示されるポート番号に合わせて**再度編集が必要**になります。
 
-4. **Dockerコンテナのビルドと起動**
-   ```bash
-   docker-compose up -d
-   ```
-   
-   これにより：
-   - 必要な依存関係を含むDockerイメージがビルドされます
-   - コンテナがバックグラウンドで起動します
-   - LangFlow（7860）、ChatUI（7850）、Minecraft（25565）用のポートが公開されます
+3.  **Minecraftモッドのインストール (任意だが推奨)**
 
-5. **Minecraftの起動とLAN公開**
-   - ホストマシンでMinecraftクライアントをFabricプロファイルで起動
-   - クリエイティブモード、ピースフル難易度で新しいワールドを作成
-   - Escキーを押して「LANに公開」を選択
-   - チートを有効にしてLANワールドを開始
-   - **重要**: 表示されたポート番号（例: 「ポート55555でローカルゲームがホストされました」）をメモしてください
+    必須ではありませんが、以下のModを導入するとBotの動作が安定し、デバッグが容易になります。
+    1.  [Fabric Loader](https://fabricmc.io/use/installer/)をインストール（推奨：バージョン1.19.0に対応するもの）
+    2.  Minecraftの`mods`フォルダに以下のModをダウンロード・インストール：
+        *   [Fabric API](https://modrinth.com/mod/fabric-api) (バージョン確認)
+        *   [Mod Menu](https://modrinth.com/mod/modmenu) (バージョン確認)
+        *   必要に応じて他のデバッグ用Modなど
 
-6. **LangFlowインターフェースへのアクセス**
-   
-   LangFlowを起動：
-   ```bash
-   docker exec -it discovery python -m langflow run
-   ```
+4.  **Dockerコンテナのビルドと起動**
+    ```bash
+    docker-compose up -d --build
+    ```
+    これにより、必要な依存関係を含むDockerイメージがビルドされ、コンテナがバックグラウンドで起動します。
 
-   ブラウザで以下のURLにアクセス：
-   ```
-   http://localhost:7860
-   ```
-   
-   ワークフローの読み込み：
-   1. 「New Flow」をクリックして「blank flow」を選択
-   2. 上部の「🔽」（ダウンロード）ボタンをクリック
-   3. 「Import」から`langflow_json`フォルダ内のJSONファイルを選択
-   4. ワークフローが読み込まれ、カスタマイズ可能になります
+5.  **Minecraftの起動とLAN公開**
+    - ホストマシンでMinecraftクライアントをFabricプロファイル（Modを使用する場合）またはバニラで起動します。
+    - クリエイティブモード、ピースフル難易度で新しいワールドを作成（または既存のワールドをロード）します。
+    - Escキーを押して「LANに公開」を選択します。
+    - チートを有効にして「LANワールドを開始」をクリックします。
+    - **重要:** チャット欄に表示される**ポート番号**（例: `ポート 51234 でローカルゲームがホストされました`）をメモしてください。
 
-## LangFlowでのエージェントのカスタマイズ
+6.  **`.env`ファイルのポート番号更新**
+    - メモしたポート番号を `.env` ファイルの `MINECRAFT_PORT` の値に設定します。
+    - **Dockerコンテナの再起動が必要です:**
+      ```bash
+      docker-compose restart discovery # 'discovery' は docker-compose.yml で定義されたサービス名
+      ```
 
-LangFlowインターフェースでは、エージェントの動作を視覚的に調整できます：
+## エージェントのカスタマイズ
 
-1. **ベースワークフローの読み込み**
-   - LangFlowインターフェース（`http://localhost:7860`）を開く
-   - 「New Flow」から「blank flow」を選択
-   - 上部の「🔽」ボタンをクリック
-   - 「Import」から`langflow_json`ディレクトリのJSONファイルを選択
-   - 必要なコンポーネントを含むベースワークフローが読み込まれます
+AutoGenエージェントの動作は、主にシステムメッセージ（プロンプト）を変更することでカスタマイズできます。
 
-2. **コンポーネントのカスタマイズ**
-   - ノードをドラッグ＆ドロップしてエージェントの動作を修正
-   - ノードをダブルクリックしてパラメータを調整
-   - カスタマイズ可能なオプション：
-     - 探索範囲と戦略
-     - スキルの優先順位と実行ルール
-     - LLMモデルの選択とパラメータ
-     - カスタムプロンプトテンプレート
+1.  **プロンプトの編集**:
+    - `discovery/autoggen.py` ファイルを開きます。
+    - `load_agents` メソッド内に各エージェント（`MineCraftPlannerAgent`, `CodeExecutionAgent`, `CodeDebuggerAgent` など）の定義があります。
+    - 各エージェントの `system_message` パラメータの内容を編集することで、そのエージェントの役割、指示、制約などを変更できます。
 
-3. **エージェントのデプロイ**
-   - ワークフローの調整が完了したら「Export」をクリック
-   - 変更したJsonファイルに上書き保存してください
-   - 更新されたJsonワークフローは次回のDiscovery実行時に自動的に読み込まれます
+2.  **スキルの追加**:
+    - Botに新しい能力を追加したい場合は、`discovery/skill/skills.py` に新しいPythonメソッド（関数）を実装します。
+    - `autoggen.py` の `CodeExecutionAgent` や `CodeDebuggerAgent` が新しいスキルを認識できるように、必要に応じてプロンプトやツール定義を更新します。
+
+3.  **コンテナの再ビルド**:
+    - Pythonコード (`.py` ファイル) を変更した場合、変更を反映させるためにDockerコンテナの再ビルドが必要です。
+      ```bash
+      docker-compose up -d --build
+      ```
 
 ## Discoveryの実行
 
-LangFlowでワークフローをカスタマイズした後、Discoveryを実行できます。
+セットアップとカスタマイズが完了したら、Discoveryを実行できます。
 
-1. **run_devbox.pyの実行**
-   ```bash
-   docker exec -it discovery python3 run_devbox.py
-   ```
+1.  **ターミナルでコンテナ内に入る**:
+    ```bash
+    docker-compose exec discovery /bin/bash
+    # または docker exec -it <container_id_or_name> /bin/bash
+    ```
 
-   実行時、以下のような出力が表示されます：
-   ```
-   Minecraft接続情報:
-   - ポート: 59143  # ← この番号をLANで表示されたポート番号に変更してください
-   - Minecraftホスト: host.docker.internal
-   - Mineflayerホスト: localhost (コンテナ内)
-   ```
+2.  **AutoGenスクリプトの実行**:
+    コンテナ内で以下のコマンドを実行します。
+    ```bash
+    python -m discovery.autoggen # または python discovery/autoggen.py
+    ```
 
-2. **ポート番号の変更**
-   - プログラムを一度終了（Ctrl+C）
-   - `run_devbox.py`を編集し、`minecraft_port`の値をLANで表示されたポート番号に変更
-   - 再度プログラムを実行
+   これにより、AutoGenのフレームワークが起動し、各エージェントが連携してタスクを開始します。
+   - まず、Minecraftサーバーへの接続が行われます。
+   - その後、ユーザーが設定した目標（現在は `autoggen.py` の `main` 関数内で定義されている可能性があります。将来的に対話的に設定できるようになるかもしれません）に基づいて、エージェントたちが計画、コード生成、実行、デバッグのサイクルを開始します。
+   - コンソールには、各エージェントの発言やコード実行の結果が表示されます。
 
-エージェントは自動的に：
-1. 修正したJSONから最新のワークフロー設定を読み込み
-2. 指定したポートでMinecraftワールドに接続
-3. カスタマイズされた動作設定に従って行動を開始します
+3.  **Botの視覚的確認 (任意)**:
+    `.env` ファイルで設定したポート（デフォルト: 3000）で Prismarine Viewer が起動します。ブラウザで `http://localhost:3000` (またはDockerが動作しているマシンのIP) にアクセスすると、Botの視点を確認できます。
 
 ## 重要な注意点
 
-- MinecraftクライアントはホストマシンでのみRUN可能です（Docker内では不可）
-- 必ずMinecraftを起動してLANに公開してから、Discoveryを実行してください
+- Minecraftクライアントはホストマシンで実行し、LANに公開する必要があります。
+- 必ずMinecraftを起動してLANに公開し、`.env` の `MINECRAFT_PORT` を更新してから、Discoveryを実行してください。
 - 接続問題が発生した場合は以下を確認：
   - ファイアウォールの設定
-  - `.env`ファイルのMINECRAFT_PORTがMinecraftのLANポートと一致していること
-  - docker-compose.ymlのホスト設定
-- モッドのバージョンが正確に一致していることを確認
-- LangFlowでの変更は次回のDiscovery実行時に自動的に適用されます
+  - `.env`ファイルの`MINECRAFT_PORT`がMinecraftのLANポートと一致していること
+  - Dockerのネットワーク設定 (`host.docker.internal` がホストマシンを指しているか)
+- Modを使用する場合は、バージョンがMinecraft本体やFabric Loaderと互換性があることを確認してください。
+- AutoGenエージェントのプロンプトを変更した場合、期待通りの動作をするかテストが必要です。
 
 ## ライセンス
 
