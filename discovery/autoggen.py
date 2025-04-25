@@ -258,7 +258,7 @@ class Auto_gen:
                 - 無限ループ防止のため `while` の使用は禁止します。
             5.  **完了報告:** **必ずコードの最後に**、タスクが達成されたかどうかの判断材料となる情報を `print` するコードを含めてください。（例: `print(f"Collected {target_count} {item_name}.")`）
             6.  **コード実行:** 生成したコードは、Markdown コードブロックを使わずに、直接 `execute_python_code` ツールで実行します。
-            7.  **非同期処理の待機:** `skills` オブジェクトのメソッドなど、`async def` で定義された非同期関数を呼び出す場合は、**必ず `await` を付けて呼び出してください。** (例: `await skills.collect_block(...)`)。これを忘れると、処理が完了する前にコードが終了してしまいます。
+            7.  **非同期処理の適切な実行:** `skills` オブジェクトの非同期メソッド (`async def`) を呼び出す場合は、**必ず `async def` でラップ関数 (例: `async def main():`) を定義し、その中で `await` を使用して非同期メソッドを呼び出してください。** その後、定義したラップ関数自体を `await` (例: `await main()`) することで、全ての非同期処理が完了するのを待機してください。これを怠ると、処理が完了する前にコードが終了してしまいます。後述の**コード例**を参照してください。
 
             **結果報告:**
             - `execute_python_code` ツールの実行結果（成功/失敗、標準出力、標準エラー出力、エラー情報、トレースバック）を**そのまま客観的に報告**してください。
@@ -281,6 +281,17 @@ class Auto_gen:
             *   `await skills.smelt_item(item_name, num=1)`
             *   `await skills.put_in_chest(item_name, num=-1)`
             *   `await skills.take_from_chest(item_name, num=-1)`
+
+            **コード例:**
+            ```python
+            async def main():
+                block = skills.get_nearest_block('oak_log')
+                await skills.move_to_position(block.position.x, block.position.y, block.position.z, 0)
+                await skills.collect_block('oak_log', 1)
+                await skills.craft_items('oak_planks', 4)
+                await skills.craft_items('crafting_table', 1)
+            await main()
+            ```
             """
         )
 
