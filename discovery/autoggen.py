@@ -253,13 +253,12 @@ class Auto_gen:
             2.  **API選択:** タスクに応じて、確認した `skills` の高レベル関数と `bot` の低レベルAPIを適切に使い分けます。
             3.  **情報参照:** 特定のスキルの内部実装（低レベルAPIの使用例）を確認したい場合は、**`CodeDebuggerAgent` に問い合わせて** `get_skill_code_tool` を使用してもらうように依頼してください。（あなたはこのツールを直接呼び出せません）
             4.  **禁止事項:**
-                - **外部ライブラリの `import` は行わないでください。**
+                - **外部ライブラリの`from` , `import` は行わないでください。**
                 - 提供されたAPIと関係ない関数やライブラリは使用しないでください。
                 - 無限ループ防止のため `while` の使用は禁止します。
             5.  **完了報告:** **必ずコードの最後に**、タスクが達成されたかどうかの判断材料となる情報を `print` するコードを含めてください。（例: `print(f"Collected {target_count} {item_name}.")`）
             6.  **コード実行:** 生成したコードは、Markdown コードブロックを使わずに、直接 `execute_python_code` ツールで実行します。
-            7.  **非同期処理の適切な実行:** `skills` オブジェクトの非同期メソッド (`async def`) を呼び出す場合は、**必ず `async def` でラップ関数 (例: `async def main():`) を定義し、その中で `await` を使用して非同期メソッドを呼び出してください。** その後、定義したラップ関数自体を `await` (例: `await main()`) することで、全ての非同期処理が完了するのを待機してください。これを怠ると、処理が完了する前にコードが終了してしまいます。後述の**コード例**を参照してください。
-
+            
             **結果報告:**
             - `execute_python_code` ツールの実行結果（成功/失敗、標準出力、標準エラー出力、エラー情報、トレースバック）を**そのまま客観的に報告**してください。
             - **タスクの完了/未完了の判断や、結果の解釈は行いません。** その判断は `TaskCompletionAgent` が担当します。
@@ -284,13 +283,11 @@ class Auto_gen:
 
             **コード例:**
             ```python
-            async def main():
-                block = skills.get_nearest_block('oak_log')
-                await skills.move_to_position(block.position.x, block.position.y, block.position.z, 0)
-                await skills.collect_block('oak_log', 1)
-                await skills.craft_items('oak_planks', 4)
-                await skills.craft_items('crafting_table', 1)
-            await main()
+            block = skills.get_nearest_block('oak_log')
+            await skills.move_to_position(block.position.x, block.position.y, block.position.z, 0)
+            await skills.collect_block('oak_log', 1)
+            await skills.craft_items('oak_planks', 4)
+            await skills.craft_items('crafting_table', 1)
             ```
             """
         )
