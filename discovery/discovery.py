@@ -395,7 +395,7 @@ class Discovery:
             # --- インベントリ情報を取得 ---
             inventory_info = {}
             # get_inventory_counts は同期メソッド
-            inventory_info = self.skills.get_inventory_counts()
+            inventory_info = await self.skills.get_inventory_counts()
 
             # --- 最終的なレスポンスを作成 ---
             final_result = {
@@ -567,8 +567,11 @@ class Discovery:
                 result["message"] = f"エラー: 予期せぬエラーが発生しました: {e}"
                 return result
     
-    async def execute_python_code(self, code_string: str):
-        """渡されたPythonコード文字列を実行します（非同期対応）"""
+    async def execute_python_code(self, code_string: str, wrapper_func_name: str = "main"):
+        """
+        渡されたPythonコード文字列を、指定された名前の非同期関数内で実行します。
+        デフォルトの関数名は 'main' です。
+        """
         # Check if bot and skills are initialized correctly and bot is connected
         if not self.bot or not self.skills or not self.is_connected:
             error_msg = "エラー: ボットまたはスキルが初期化されていないか、サーバーに接続されていません。"
@@ -590,46 +593,37 @@ class Discovery:
             "__builtins__": __builtins__ # これが含まれている点が重要
         }
 
-        # 動的に生成する非同期ラッパー関数の名前
-        dynamic_async_func_name = "__dynamic_exec_async_code__"
-
         # ユーザーコードを適切にインデント
         indented_user_code = textwrap.indent(code_string, '    ')
 
-        # 非同期ラッパー関数のコード文字列を作成
+        # 非同期ラッパー関数のコード文字列を作成 (指定された関数名を使用)
         wrapper_code = f"""
-import asyncio # ラッパー関数内で asyncio を利用可能にする
+import asyncio
 
-async def {dynamic_async_func_name}():
-    # 実行コンテキストから skills, discovery, bot を参照
-    # (exec_globals で渡される)
-    # --- User Code Start ---
+async def {wrapper_func_name}():
 {indented_user_code}
-    # --- User Code End ---
 """
+        print(f"\033[32m{wrapper_code}\033[0m")
 
         try:
             # ラッパー関数を定義
             exec(wrapper_code, exec_globals)
 
-            # 定義された非同期関数オブジェクトを取得
-            async_func_to_run = exec_globals.get(dynamic_async_func_name)
+            # 定義された非同期関数オブジェクトを取得 (指定された関数名を使用)
+            async_func_to_run = exec_globals.get(wrapper_func_name)
 
             if async_func_to_run and inspect.iscoroutinefunction(async_func_to_run):
-                # 標準出力と標準エラーをキャプチャしながら非同期関数を実行
                 with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(error_buffer):
                     await async_func_to_run()
             else:
                 # 関数が正しく定義されなかった場合のエラー
-                error_message = f"Failed to define or find the async wrapper function '{dynamic_async_func_name}'.\n\n{wrapper_code}"
+                error_message = f"Failed to define or find the async wrapper function '{wrapper_func_name}'.\\n\\n{wrapper_code}"
                 raise RuntimeError(error_message)
 
             # 実行結果を取得
             output = output_buffer.getvalue()
             error_output = error_buffer.getvalue()
-
-            # # 最後にエラー防止の為リコネクトする -> 必要に応じて呼び出すように変更。コメントアウト。
-            # await self.reconnect_bot()
+            print(f"\033[32m{output}\033[0m")
             result = {
                 "success": True,
                 "output": output,
@@ -643,7 +637,7 @@ async def {dynamic_async_func_name}():
             # エラー発生前のエラー出力も取得しておく
             error_output_before_exception = error_buffer.getvalue()
 
-            print(f"\033[31mコード実行中にエラーが発生しました: {error_message}\nエラー詳細:{tb_str}\n実行結果:{error_output_before_exception}\033[0m") # コンソールにもエラー表示
+            print(f"\033[31mコード実行中にエラーが発生しました: {error_message}\nエラー詳細:{tb_str}\033[0m") # コンソールにもエラー表示
 
             result = {
                 "success": False,
@@ -730,20 +724,22 @@ async def run_craft_example():
         return
     
     code = """
-await skills.handle_connection_error()
+async def main():
+    # 最寄りの stone ブロックへ1ブロック以内まで移動
+    await skills.go_to_nearest_block('stone', min_distance=1)
+
+    # Botの現在位置と最寄りのstoneの座標を確認して、距離を計算して表示
+    bot_pos = await skills.get_bot_position()
+    nearest_stone = await skills.get_nearest_block('stone')
+    print(nearest_stone.position.x)
+await main()
 """
     while True:
         try:
             print(input("Enter: "))
             #await skills.move_to_position(76, 52, -110,0)
-            #print(await discovery.execute_python_code(code))
+            print(await discovery.execute_python_code(code))
             #wait skills.move_to_position(67, 63, -11,0)
-            print("crafting_table")
-            print(await skills.craft_items('crafting_table', 1))
-            print("furnace")
-            print(await skills.craft_items('furnace', 1))
-            print("oak_planks")
-            print(await skills.craft_items('oak_planks', 1))
             #await skills.move_to_position(67, 63, -11,0)
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")

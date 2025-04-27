@@ -18,16 +18,19 @@ class Skills:
         self.movements = discovery.movements
         self.mineflayer = discovery.mineflayer
 
-    def get_bot_position(self):
+    async def get_bot_position(self):
         """
         ボットの現在位置を取得します。
 
         Returns:
-            tuple[float, float, float]: ボットの位置のx, y, z座標を含むタプル
+            tuple[float, float, float]: ボットの位置のx, y, z座標を含むtuple。 
 
         Example:
-            >>> get_bot_position()
+            >>>result = get_bot_position()
+            >>>print(result)
             (100, 50, 200)
+            >>>print(result[0])
+            100
         """
         bot_pos = self.bot.blockAt(self.bot.entity.position).position
         return bot_pos.x, bot_pos.y, bot_pos.z
@@ -237,7 +240,7 @@ class Skills:
         return surrounding_blocks
     
     
-    def get_inventory_counts(self):
+    async def get_inventory_counts(self):
         """
         ボットのインベントリ内の各アイテムの名前と数を辞書形式で返します。
 
@@ -258,10 +261,10 @@ class Skills:
                 inventory_counts[item.name] += item.count
             else:
                 inventory_counts[item.name] = item.count
-        
+        await asyncio.sleep(0.1)
         return inventory_counts
     
-    def get_nearest_block(self, block_name, max_distance=1000):
+    async def get_nearest_block(self, block_name, max_distance=1000):
         """
         BOTの周囲で指定されたブロック名のブロックを検索し、最も近いブロックの情報を返します。
         
@@ -297,6 +300,8 @@ class Skills:
             harvestTools: undefined,
             drops: [ 104 ]
             }
+            >>> print(get_nearest_block('oak_log').position.x)
+            -83
         """
         self.bot.chat(f"{str(block_name)}のブロックを取得します。")
         try:
@@ -318,6 +323,7 @@ class Skills:
             # 結果を返す
             if block:
                 return block
+            await asyncio.sleep(0.1)
             return None
             
         except Exception as e:
@@ -326,7 +332,7 @@ class Skills:
             traceback.print_exc()
             return None
     
-    def get_nearest_free_space(self, X_size=1, Y_size=1, Z_size=1, distance=15, y_offset=0):
+    async def get_nearest_free_space(self, X_size=1, Y_size=1, Z_size=1, distance=15, y_offset=0):
         """
         BOTの周囲で指定されたサイズの空きスペース（上部が空気で下部が固体ブロック）を見つけます。
         
@@ -491,14 +497,14 @@ class Skills:
                     return result
                     
                 # クラフティングテーブルを探す
-                crafting_table = self.get_nearest_block('crafting_table', crafting_table_range)
+                crafting_table = await self.get_nearest_block('crafting_table', crafting_table_range)
                 if not crafting_table:
                     # インベントリにクラフティングテーブルがあるか確認
-                    if self.get_inventory_counts().get('crafting_table', 0) > 0:
+                    if (await self.get_inventory_counts()).get('crafting_table', 0) > 0:
                         # クラフティングテーブルを設置
-                        pos = self.get_nearest_free_space(X_size=1,Z_size=1,distance=6)
+                        pos = await self.get_nearest_free_space(X_size=1,Z_size=1,distance=6)
                         await self.place_block('crafting_table', pos.x, pos.y, pos.z)
-                        crafting_table = self.get_nearest_block('crafting_table', crafting_table_range)
+                        crafting_table = await self.get_nearest_block('crafting_table', crafting_table_range)
                         if crafting_table:
                             recipes = self.bot.recipesFor(item_id, None, 1, crafting_table)
                             placed_table = True
@@ -575,9 +581,9 @@ class Skills:
         
         Args:
             block_name (str): 設置するブロック名
-            x (float): 設置するX座標
-            y (float): 設置するY座標
-            z (float): 設置するZ座標
+            x : 設置するX座標
+            y : 設置するY座標
+            z : 設置するZ座標
             place_on (str): 優先的に設置する面の方向。'top', 'bottom', 'north', 'south', 'east', 'west', 'side'から選択。デフォルトは'bottom'
             dont_cheat (bool): チートモードでも通常の方法でブロックを設置するかどうか。デフォルトはFalse
             
@@ -954,7 +960,7 @@ class Skills:
         
         try:
             # 最も近いチェストを探す
-            chest = self.get_nearest_block("chest", 32)
+            chest = await self.get_nearest_block("chest", 32)
             if not chest:
                 result["message"] = "近くにチェストが見つかりませんでした。"
                 self.bot.chat(result["message"])
@@ -1022,7 +1028,7 @@ class Skills:
         
         try:
             # 最も近いチェストを探す
-            chest = self.get_nearest_block("chest", 32)
+            chest = await self.get_nearest_block("chest", 32)
             if not chest:
                 result["message"] = "近くにチェストが見つかりませんでした。"
                 self.bot.chat(result["message"])
@@ -1224,7 +1230,7 @@ class Skills:
                 self.bot.chat(f"最大検索範囲を{MAX_RANGE}ブロックに制限します。")
                 
             # 最も近いブロックを探す
-            block = self.get_nearest_block(self._get_item_id(block_name), range)
+            block = await self.get_nearest_block(self._get_item_id(block_name), range)
             if not block:
                 result["message"] = f"{range}ブロック以内に{block_name}が見つかりませんでした。"
                 self.bot.chat(result["message"])
@@ -1590,13 +1596,13 @@ class Skills:
             "collected": 0,
             "block_name": block_name
         }
-        
+
         if num < 1:
             result["message"] = f"無効な収集数量: {num}"
             result["error"] = "invalid_number"
             self.bot.chat(result["message"])
             return result
-            
+        
         # 同等のブロックタイプをリストに追加
         blocktypes = [block_name]
         
@@ -1604,21 +1610,19 @@ class Skills:
         ores = ['coal', 'diamond', 'emerald', 'iron', 'gold', 'lapis_lazuli', 'redstone']
         if block_name in ores:
             blocktypes.append(f"{block_name}_ore")
-        
         # 深層岩鉱石の対応
         if block_name.endswith('ore'):
             blocktypes.append(f"deepslate_{block_name}")
-            
         # dirtの特殊処理
         if block_name == 'dirt':
             blocktypes.append('grass_block')
-            
+
         collected = 0
         
         for i in range(num):
             blocks = []
             for btype in blocktypes:
-                found_block = self.get_nearest_block(btype, 64)
+                found_block = await self.get_nearest_block(btype, 64)
                 if found_block:
                     blocks.append(found_block)
                     
@@ -1687,7 +1691,7 @@ class Skills:
         self.bot.chat(result["message"])
         return result
         
-    def should_place_torch(self):
+    async def should_place_torch(self):
         """
         松明を設置すべきかどうかを周辺にある松明の有無およびインベントリに松明があるかどうかの基づいて判断します。
         
@@ -1697,9 +1701,9 @@ class Skills:
         pos = self.bot.entity.position
         
         # 近くの松明を探す
-        nearest_torch = self.get_nearest_block('torch', 6)
+        nearest_torch =await self.get_nearest_block('torch', 6)
         if not nearest_torch:
-            nearest_torch = self.get_nearest_block('wall_torch', 6)
+            nearest_torch = await self.get_nearest_block('wall_torch', 6)
             
         # 近くに松明がない場合
         if not nearest_torch:
@@ -1727,7 +1731,7 @@ class Skills:
             bool: 松明を設置した場合はTrue、そうでない場合はFalse
         """
         try:
-            if self.should_place_torch():
+            if await self.should_place_torch():
                 pos = self.bot.entity.position
                 Vec3 = require('vec3')
                 # 足元に松明を設置
@@ -1875,7 +1879,7 @@ class Skills:
                     result["message"] = f"移動がタイムアウトしました ({move_timeout}秒)。"
                     result["error"] = "move_timeout"
                     # 現在位置を記録
-                    current_pos_timeout = self.get_bot_position()
+                    current_pos_timeout = await self.get_bot_position()
                     result["position"] = { "x": current_pos_timeout[0], "y": current_pos_timeout[1], "z": current_pos_timeout[2] }
                     return result
                 # --- ここまで追加 ---
@@ -1901,7 +1905,7 @@ class Skills:
                         free_space = None
                         search_distance = 100
                         while free_space is None and search_distance < 500: # 無限ループ防止
-                            free_space = self.get_nearest_free_space(X_size=1,Y_size=2,Z_size=1,distance=search_distance)
+                            free_space = await self.get_nearest_free_space(X_size=1,Y_size=2,Z_size=1,distance=search_distance)
                             if free_space:
                                 break
                             search_distance += 100
@@ -1913,7 +1917,7 @@ class Skills:
                             result["success"] = False
                             result["message"] = "スタック解消中に退避スペースが見つからず、移動を中断しました。"
                             result["error"] = "stuck_no_space"
-                            current_pos_stuck = self.get_bot_position()
+                            current_pos_stuck = await self.get_bot_position()
                             result["position"] = { "x": current_pos_stuck[0], "y": current_pos_stuck[1], "z": current_pos_stuck[2] }
                             return result
 
@@ -1926,7 +1930,7 @@ class Skills:
                             result["success"] = False
                             result["message"] = "スタック解消に失敗しました。移動を中断します。"
                             result["error"] = "stuck_unresolved"
-                            current_pos_stuck_fail = self.get_bot_position()
+                            current_pos_stuck_fail = await self.get_bot_position()
                             result["position"] = { "x": current_pos_stuck_fail[0], "y": current_pos_stuck_fail[1], "z": current_pos_stuck_fail[2] }
                             return result
                         else:
@@ -1948,7 +1952,7 @@ class Skills:
                 await asyncio.sleep(1) # ループのインターバル
 
             # --- 移動完了後の処理 ---
-            bot_x, bot_y, bot_z = self.get_bot_position()
+            bot_x, bot_y, bot_z = await self.get_bot_position()
             # 目標位置との距離を計算 (インデント修正)
             final_distance = ((bot_x - x) ** 2 + (bot_y - y) ** 2 + (bot_z - z) ** 2) ** 0.5
             if final_distance <= min_distance:
@@ -1974,7 +1978,7 @@ class Skills:
             result["error"] = "unexpected_error"
             # エラー発生時の位置を記録
             try:
-                error_pos = self.get_bot_position()
+                error_pos = await self.get_bot_position()
                 result["position"] = { "x": error_pos[0], "y": error_pos[1], "z": error_pos[2] }
             except: # get_bot_positionも失敗する可能性
                  result["position"] = {"x": None, "y": None, "z": None}
@@ -2017,15 +2021,15 @@ class Skills:
             
         # かまどを探す
         placed_furnace = False
-        furnace_block = self.get_nearest_block('furnace', 32)
+        furnace_block = await self.get_nearest_block('furnace', 32)
         if not furnace_block:
             # かまどを持っているか確認
-            if self.get_inventory_counts().get('furnace', 0) > 0:
+            if (await self.get_inventory_counts()).get('furnace', 0) > 0:
                 # かまどを設置
-                pos = self.get_nearest_free_space(X_size=1,Z_size=1,distance=15)
+                pos = await self.get_nearest_free_space(X_size=1,Z_size=1,distance=15)
                 place_result = await self.place_block('furnace', pos.x, pos.y, pos.z)
                 if place_result:
-                    furnace_block = self.get_nearest_block('furnace', 32)
+                    furnace_block = await self.get_nearest_block('furnace', 32)
                     placed_furnace = True
                 else:
                     result["message"] = "かまどの設置に失敗しました"
@@ -2071,7 +2075,7 @@ class Skills:
                     return result
                     
             # 精錬するアイテムを持っているか確認
-            inv_counts = self.get_inventory_counts()
+            inv_counts = await self.get_inventory_counts()
             if not inv_counts.get(item_name, 0) or inv_counts.get(item_name, 0) < num:
                 result["message"] = f"精錬するための{item_name}が足りません"
                 result["error"] = "insufficient_items"
@@ -2220,7 +2224,7 @@ class Skills:
         
         try:
             # 最も近いかまどを見つける
-            furnace_block = self.get_nearest_block('furnace', 32)
+            furnace_block = await self.get_nearest_block('furnace', 32)
             if not furnace_block:
                 result["message"] = "近くにかまどが見つかりません"
                 result["error"] = "no_furnace"
@@ -2751,7 +2755,7 @@ class Skills:
                 ]
                 
                 for door_type in door_types:
-                    door_block = self.get_nearest_block(door_type, 16)
+                    door_block = await self.get_nearest_block(door_type, 16)
                     if door_block:
                         door_pos = door_block.position
                         break
