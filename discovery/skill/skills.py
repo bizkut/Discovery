@@ -18,16 +18,19 @@ class Skills:
         self.movements = discovery.movements
         self.mineflayer = discovery.mineflayer
 
-    def get_bot_position(self):
+    async def get_bot_position(self):
         """
         ボットの現在位置を取得します。
 
         Returns:
-            tuple[float, float, float]: ボットの位置のx, y, z座標を含むタプル
+            tuple[float, float, float]: ボットの位置のx, y, z座標を含むtuple。 
 
         Example:
-            >>> get_bot_position()
+            >>>result = get_bot_position()
+            >>>print(result)
             (100, 50, 200)
+            >>>print(result[0])
+            100
         """
         bot_pos = self.bot.blockAt(self.bot.entity.position).position
         return bot_pos.x, bot_pos.y, bot_pos.z
@@ -297,6 +300,8 @@ class Skills:
             harvestTools: undefined,
             drops: [ 104 ]
             }
+            >>> print(get_nearest_block('oak_log').position.x)
+            -83
         """
         self.bot.chat(f"{str(block_name)}のブロックを取得します。")
         try:
@@ -495,7 +500,7 @@ class Skills:
                 crafting_table = await self.get_nearest_block('crafting_table', crafting_table_range)
                 if not crafting_table:
                     # インベントリにクラフティングテーブルがあるか確認
-                    if await self.get_inventory_counts().get('crafting_table', 0) > 0:
+                    if (await self.get_inventory_counts()).get('crafting_table', 0) > 0:
                         # クラフティングテーブルを設置
                         pos = await self.get_nearest_free_space(X_size=1,Z_size=1,distance=6)
                         await self.place_block('crafting_table', pos.x, pos.y, pos.z)
@@ -576,9 +581,9 @@ class Skills:
         
         Args:
             block_name (str): 設置するブロック名
-            x (float): 設置するX座標
-            y (float): 設置するY座標
-            z (float): 設置するZ座標
+            x : 設置するX座標
+            y : 設置するY座標
+            z : 設置するZ座標
             place_on (str): 優先的に設置する面の方向。'top', 'bottom', 'north', 'south', 'east', 'west', 'side'から選択。デフォルトは'bottom'
             dont_cheat (bool): チートモードでも通常の方法でブロックを設置するかどうか。デフォルトはFalse
             
@@ -1874,7 +1879,7 @@ class Skills:
                     result["message"] = f"移動がタイムアウトしました ({move_timeout}秒)。"
                     result["error"] = "move_timeout"
                     # 現在位置を記録
-                    current_pos_timeout = self.get_bot_position()
+                    current_pos_timeout = await self.get_bot_position()
                     result["position"] = { "x": current_pos_timeout[0], "y": current_pos_timeout[1], "z": current_pos_timeout[2] }
                     return result
                 # --- ここまで追加 ---
@@ -1912,7 +1917,7 @@ class Skills:
                             result["success"] = False
                             result["message"] = "スタック解消中に退避スペースが見つからず、移動を中断しました。"
                             result["error"] = "stuck_no_space"
-                            current_pos_stuck = self.get_bot_position()
+                            current_pos_stuck = await self.get_bot_position()
                             result["position"] = { "x": current_pos_stuck[0], "y": current_pos_stuck[1], "z": current_pos_stuck[2] }
                             return result
 
@@ -1925,7 +1930,7 @@ class Skills:
                             result["success"] = False
                             result["message"] = "スタック解消に失敗しました。移動を中断します。"
                             result["error"] = "stuck_unresolved"
-                            current_pos_stuck_fail = self.get_bot_position()
+                            current_pos_stuck_fail = await self.get_bot_position()
                             result["position"] = { "x": current_pos_stuck_fail[0], "y": current_pos_stuck_fail[1], "z": current_pos_stuck_fail[2] }
                             return result
                         else:
@@ -1947,7 +1952,7 @@ class Skills:
                 await asyncio.sleep(1) # ループのインターバル
 
             # --- 移動完了後の処理 ---
-            bot_x, bot_y, bot_z = self.get_bot_position()
+            bot_x, bot_y, bot_z = await self.get_bot_position()
             # 目標位置との距離を計算 (インデント修正)
             final_distance = ((bot_x - x) ** 2 + (bot_y - y) ** 2 + (bot_z - z) ** 2) ** 0.5
             if final_distance <= min_distance:
@@ -1973,7 +1978,7 @@ class Skills:
             result["error"] = "unexpected_error"
             # エラー発生時の位置を記録
             try:
-                error_pos = self.get_bot_position()
+                error_pos = await self.get_bot_position()
                 result["position"] = { "x": error_pos[0], "y": error_pos[1], "z": error_pos[2] }
             except: # get_bot_positionも失敗する可能性
                  result["position"] = {"x": None, "y": None, "z": None}
@@ -2016,10 +2021,10 @@ class Skills:
             
         # かまどを探す
         placed_furnace = False
-        furnace_block = self.get_nearest_block('furnace', 32)
+        furnace_block = await self.get_nearest_block('furnace', 32)
         if not furnace_block:
             # かまどを持っているか確認
-            if await self.get_inventory_counts().get('furnace', 0) > 0:
+            if (await self.get_inventory_counts()).get('furnace', 0) > 0:
                 # かまどを設置
                 pos = await self.get_nearest_free_space(X_size=1,Z_size=1,distance=15)
                 place_result = await self.place_block('furnace', pos.x, pos.y, pos.z)
@@ -2219,7 +2224,7 @@ class Skills:
         
         try:
             # 最も近いかまどを見つける
-            furnace_block = self.get_nearest_block('furnace', 32)
+            furnace_block = await self.get_nearest_block('furnace', 32)
             if not furnace_block:
                 result["message"] = "近くにかまどが見つかりません"
                 result["error"] = "no_furnace"
