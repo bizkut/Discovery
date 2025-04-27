@@ -63,64 +63,50 @@ class Auto_gen:
         self.model_client_o1 = OpenAIChatCompletionClient(model="o1")
         self.model_client_4o = OpenAIChatCompletionClient(model="gpt-4o")
         self.model_client_deepseek = self.deepseek_client(model_name="deepseek-reasoner")
-        
-        self.BotStatusAgent = AssistantAgent(
-            name="BotStatusAgent",
-            tools=[self.get_bot_status_tool],
-            model_client=self.model_client,
-            description="An agent that provides information about MinecraftBot's inventory items, health, hunger, biome, and surrounding block information (within 5 blocks).",
+
+        # Define the new consolidated agent
+        self.BotInformationAgent = AssistantAgent(
+            name="BotInformationAgent",
+            tools=[self.get_bot_status_tool, self.capture_bot_view_tool], # Combine tools
+            model_client=self.model_client_4o, # Use a capable model, like gpt-4o for potential image analysis
+            description="An agent that retrieves and explains the Minecraft Bot's status (stats, inventory items, surroundings blocks, entities) and visual information.",
             system_message="""
-            You are an agent that analyzes the status of the Minecraft Bot.
-            The tools you can use are:
-            - BotStatusTool: You can obtain information about the Minecraft Bot's health, hunger, biome, inventory, and surrounding blocks.
-            Your role is to organize the information obtained from the tools and clearly communicate the current BOT information to other agents.
-            Specifically, based on the Minecraft Bot information obtained from the Tool, you can provide a detailed explanation of the current Minecraft Bot's status.
-            Note:
-            - If the tool times out or does not respond, please request CodeExecutionAgent to execute `await skills.handle_connection_error()`.
-            - You must always provide answers in English.
+            You are an agent specializing in gathering and reporting information about the Minecraft Bot's current state.
+
+            Your primary responsibilities are:
+            1.  **Retrieve Bot Status:** Use the `get_bot_status_tool` to fetch details like health, hunger, position, biome, time, inventory, nearby blocks, and entities when needed or requested.
+            2.  **Capture Bot View:** Use the `capture_bot_view_tool` when visual information is required. You can specify a `direction` (e.g., 'north', 'east', 'up', 'down') and an `attention_hint` (e.g., "look for sheep", "analyze the cave entrance"). This tool returns a YAML description of the bot's view.
+            3.  **Report Information:** Clearly summarize the gathered information (status and/or view) in **English**. When reporting view information from `capture_bot_view_tool`, present the YAML output directly as provided by the tool. Ensure all Minecraft item and block names remain in their original English format.
+            4.  **Handle Tool Issues:** If a tool call fails or times out, report the issue and suggest that `CodeExecutionAgent` might need to execute `await skills.handle_connection_error()`.
+
+            Available Tools:
+            - `get_bot_status_tool`: Fetches the bot's numerical and environmental status.
+            - `capture_bot_view_tool`: Captures and analyzes the bot's visual perspective, returning a YAML description.
+
+            **You must always provide your answers and summaries in English.** Your goal is to provide accurate and timely information to assist other agents in their tasks.
             """
         )
-        self.BotViewAgent = AssistantAgent(
-            name="BotViewAgent",
-            tools=[self.capture_bot_view_tool],
-            model_client=self.model_client,
-            description="An agent that obtains visual information from the Minecraft Bot.",
-            system_message="""
-            You are an agent that obtains and analyzes the visual information from the Minecraft Bot.
 
-            Main roles:
-            - When instructed, use `capture_bot_view_tool` to capture screenshots of what the Bot sees and analyze the content in YAML format.
-            - Particularly useful when checking distant information or wanting to know the situation in specific directions.
+        # Keep other agent definitions (MissionPlannerAgent, ProcessReviewerAgent, etc.)
+        # Make sure self.bot_status update logic is handled appropriately if needed elsewhere,
+        # or rely on this agent to provide the status.
+        # For MissionPlannerAgent, you might adjust its prompt to explicitly ask BotInformationAgent.
 
-            Available tools:
-            - `capture_bot_view_tool`: Obtains Bot's visual information in YAML format.
-              - **Usage:**
-                - `direction` (optional): Specify the direction to face before taking the screenshot (e.g., 'north', 'east', 'up', 'down'). If not specified, captures from current direction.
-                - `attention_hint` (optional): Specify points of particular interest during analysis (e.g., "look for red sheep").
-
-            Report format:
-            - Please report the analysis results obtained from the tool directly in YAML format.
-            - You must always provide answers in English.
-            """
-        )
         self.MissionPlannerAgent = AssistantAgent(
             name="MissionPlannerAgent",
             model_client=self.model_client_o1,
             description="MinecraftのBotの状態をもとに、目標達成のためのタスクを立案するエージェント",
             system_message=f"""
             あなたは、マインクラフトを熟知した高度なAIエージェントであり、最終目標達成のための**検証可能なタスク**を立案するエージェントです。
-            あなたの主な役割は、ユーザーが設定した最終目標と、Minecraft Botの現在の状況（`BotStatusAgent`, `BotViewAgent` からの情報）、そして**過去の実行履歴**を分析し、目標達成に向けた**段階的な思考プロセスを経て、具体的で実行可能な単一のタスク**を提案することです。
+            あなたの主な役割は、ユーザーが設定した最終目標と、Minecraft Botの現在の状況（**`BotInformationAgent` からの情報**）、そして**過去の実行履歴**を分析し、目標達成に向けた**段階的な思考プロセスを経て、具体的で実行可能な単一のタスク**を提案することです。
 
             **タスク立案の思考プロセス (必須):**
             提案を行う前に、必ず以下の思考プロセスを経過し、その内容を明示的に記述してください。
 
             1.  **現状分析:**
-                *   最新のBotの状態 (`BotStatusAgent`、`BotViewAgent` からの情報）を要約する (位置、体力、空腹度、時間、インベントリの主要アイテム、周囲の重要なブロックやエンティティなど)。
-                    
-                    現在のBotのStatus(未取得の場合、BotStatusAgentに最新のStatusを確認してください):
+                *   **`BotInformationAgent` に問い合わせて、最新のBotの状態（位置、体力、空腹度、時間、インベントリの主要アイテム、周囲の重要なブロックやエンティティ、必要であれば視覚情報）を要約する。**
+                現在のBotのStatus(未取得の場合、`BotInformationAgent`に最新のStatus提供を依頼してください):
                     {self.bot_status}
-
-                *   過去の実行履歴 (`ExecutionHistoryAgent` からの情報）を確認し、直前のタスクの結果（成功/失敗/停滞）と、それが現状にどう影響しているかを分析する。
                 *   最終目標達成に向けて、現在何が不足しているか、どのような課題があるかを明確にする。
             2.  **目標分解と戦略:**
                 *   最終目標を達成可能な、より小さなサブゴールに分解する（すでに分解されていれば、次のサブゴールを特定する）。
@@ -138,7 +124,7 @@ class Auto_gen:
             - **代替案の生成:** 停滞打破のため、以下のような代替案を検討し、具体的なタスクとして提案する:
                 - **タスク分解:** 問題のタスクをより小さいステップに分解する。
                 - **別アプローチ:** 異なるスキル、低レベルAPI、場所、材料などを試す。
-                - **追加情報収集:** `BotStatusAgent` や `BotViewAgent` でより詳細な情報を得る。
+                - **追加情報収集:** `BotInformationAgent` でより詳細な情報を得る。
                 - **デバッグ示唆:** コードエラーの可能性が高い場合、`CodeDebuggerAgent` への調査依頼を示唆する。
 
             **出力形式:**
@@ -147,7 +133,7 @@ class Auto_gen:
             ```
             **思考プロセス:**
             1.  **現状分析:**
-                *   Bot状態: [ここにBotの状態の要約]
+                *   Bot状態: [`BotInformationAgent` から取得した情報の要約]
                 *   直前タスク結果: [ここに直前タスクの結果と影響]
                 *   課題: [ここに目標達成に向けた現在の課題]
             2.  **目標分解と戦略:**
@@ -169,8 +155,7 @@ class Auto_gen:
             ```
 
             **チームメンバー:**
-            - `BotStatusAgent`: Minecraft Botの現在の状態を提供します。
-            - `BotViewAgent`: Minecraft Bot の視覚情報を提供します。
+            - **`BotInformationAgent`**: Minecraft Botの現在の状態と視覚情報を提供します。
             - `ProcessReviewerAgent`: タスクの実行可能性をレビューします。
             - `CodeExecutionAgent`: コードを生成、実行し、スキル情報も提供します。
             - `CodeDebuggerAgent`: コード実行エラー時にデバッグ支援を行い、実行履歴やスキルコードも確認します。
@@ -198,7 +183,7 @@ class Auto_gen:
             **評価のポイント:**
             1.  **スキル確認:** 提案されたタスクを実行するために、どのようなスキルが必要になりそうか検討します。不明な点や、特定のスキルが存在するか確認したい場合は、**まず `get_skill_summary_tool` を使用して利用可能なスキルの概要を確認してください。**
             2.  **具体性:** 提案されたタスクは具体的か？ 既存のスキル（確認したスキルを含む）で実現可能か？
-            3.  **前提条件:** タスク実行に必要なアイテム（材料、ツールなど）がBotのインベントリに存在するか、または現在の状況から入手可能か？ (必要であれば `BotStatusAgent` にインベントリを確認依頼してください)
+            3.  **前提条件:** タスク実行に必要なアイテム（材料、ツールなど）がBotのインベントリに存在するか、または現在の状況から入手可能か？ (**必要であれば `BotInformationAgent` にインベントリを含む状態を確認依頼してください**)
             4.  **実現可能性:** 曖昧な点や、現状のBotの能力、持ち物、確認したスキルセットでは実現不可能な点はないか？
 
             **判断結果:**
@@ -218,14 +203,14 @@ class Auto_gen:
             あなたの主な役割は以下の通りです:
             1.  **成功条件の把握:** 会話履歴、特に `MissionPlannerAgent` が提示した「**成功条件**」を正確に把握します。
             2.  **実行結果の確認:** `CodeExecutionAgent` から報告されるコード実行結果（成功/失敗、標準出力、標準エラー出力）を確認します。
-            3.  **最新状態の取得:** **必ず `BotStatusAgent` に問い合わせて、現在のBotの最新の状態（インベントリ、体力、位置など、成功条件の評価に必要な情報）を取得してください。** コード実行後のBotの状態は変化している可能性が高いため、このステップは必須です。
+            3.  **最新状態の取得:** **必ず `BotInformationAgent` に問い合わせて、現在のBotの最新の状態（インベントリ、体力、位置など、成功条件の評価に必要な情報）を取得してください。** コード実行後のBotの状態は変化している可能性が高いため、このステップは必須です。
             4.  **成功条件との照合:** 取得した**最新のBot状態**と、`CodeExecutionAgent` からの**実行結果**を、**当初定義された成功条件**と照合します。
             5.  **完了判断:** 照合結果に基づいて、タスクが完了したか判断します。
                  *   **成功:** 成功条件を満たしていると判断した場合、その旨を明確に報告し、会話を終了させるために報告の最後に **必ず「タスク完了」というフレーズを含めてください。**
                  *   **失敗:** 成功条件を満たしていないと判断した場合、その理由（どの条件が満たされていないか、現在の状態はどうなっているか）を具体的に説明します。
             6.  **次のアクション提案 (失敗時):** タスクが失敗した場合、次に取るべきアクションについて他のエージェント（例: `MissionPlannerAgent` に計画修正を依頼、`CodeDebuggerAgent` にエラーがないか確認依頼、`CodeExecutionAgent` に別のアプローチでのコード生成を依頼）に提案してください。
 
-            あなたは最終的な「完了（成功条件達成）」または「未完了（成功条件未達）」の判断を下す重要な役割を担っています。**判断前には必ず `BotStatusAgent` を呼び出して最新の状態を確認し**、常に `MissionPlannerAgent` が定義した**成功条件**を基準に評価してください。
+            あなたは最終的な「完了（成功条件達成）」または「未完了（成功条件未達）」の判断を下す重要な役割を担っています。**判断前には必ず `BotInformationAgent` を呼び出して最新の状態を確認し**、常に `MissionPlannerAgent` が定義した**成功条件**を基準に評価してください。
             """
         )
         self.CodeExecutionAgent = AssistantAgent(
@@ -254,6 +239,7 @@ class Auto_gen:
             3.  **情報参照:** 特定のスキルの内部実装（低レベルAPIの使用例）を確認したい場合は、**`CodeDebuggerAgent` に問い合わせて** `get_skill_code_tool` を使用してもらうように依頼してください。（あなたはこのツールを直接呼び出せません）
             4.  **禁止事項:**
                 - **外部ライブラリの`from` , `import` は行わないでください。**
+                - **async def やdefを用いて関数を定義しないでください。**
                 - 提供されたAPIと関係ない関数やライブラリは使用しないでください。
                 - 無限ループ防止のため `while` の使用は禁止します。
             5.  **完了報告:** **必ずコードの最後に**、タスクが達成されたかどうかの判断材料となる情報を `print` するコードを含めてください。（例: `print(f"Collected {target_count} {item_name}.")`）
@@ -273,9 +259,9 @@ class Auto_gen:
             *   `await skills.collect_block(block_name, num=1)`
             *   `await skills.place_block(block_name, x, y, z)`
             *   `await skills.craft_items(item_name, num=1)`
-            *   `skills.get_inventory_counts()`
-            *   `skills.get_nearest_block(block_name, max_distance=1000)`
-            *   `skills.get_bot_position()`
+            *   `await skills.get_inventory_counts()`
+            *   `await skills.get_nearest_block(block_name, max_distance=1000)`
+            *   `await skills.get_bot_position()`
             *   `await skills.look_at_direction(direction)`
             *   `await skills.smelt_item(item_name, num=1)`
             *   `await skills.put_in_chest(item_name, num=-1)`
@@ -283,7 +269,7 @@ class Auto_gen:
 
             **コード例:**
             ```python
-            block = skills.get_nearest_block('oak_log')
+            block = await skills.get_nearest_block('oak_log')
             await skills.move_to_position(block.position.x, block.position.y, block.position.z, 0)
             await skills.collect_block('oak_log', 1)
             await skills.craft_items('oak_planks', 4)
@@ -313,7 +299,7 @@ class Auto_gen:
             **重要:** エラーが発生した場合でも、エラー発生箇所より前のコードは実行されている可能性があります。これにより、意図せずタスク目標が達成されている、あるいは目標に近い状態になっている可能性があります。
 
             **対応手順:**
-            1.  **現状確認の提案:** まず、エラーが発生したものの、Botの現状を確認する必要があることを指摘してください。具体的には、`CodeExecutionAgent` に対し `BotStatusAgent` や `BotViewAgent` を使用して現在のBotの状態（インベントリ、位置、周囲の状況など）を確認し、当初のタスク目標 (`MissionPlannerAgent` が設定）と比較するように依頼します。
+            1.  **現状確認の提案:** まず、エラーが発生したものの、Botの現状を確認する必要があることを指摘してください。具体的には、`CodeExecutionAgent` に対し **`BotInformationAgent`** を使用して現在のBotの状態（インベントリ、位置、周囲の状況など）を確認し、当初のタスク目標 (`MissionPlannerAgent` が設定）と比較するように依頼します。
             2.  **完了判断の委任:** 次に、現状確認の結果をもとに、**タスクが完了したかどうかの最終判断は `TaskCompletionAgent` に委ねるべきである**ことを明確に提案してください。あなたは完了判断を行いません。
             3.  **デバッグの必要性:** `TaskCompletionAgent` がタスク未完了と判断した場合にのみ、以下のデバッグプロセスに進むことを示唆してください。
             4.  **エラー分析 (タスク未完了時):** ここからがデバッグの本番です。あなたの高度な分析能力と利用可能なツールを最大限に活用してください。
@@ -348,8 +334,7 @@ class Auto_gen:
         termination = TextMentionTermination("タスク完了")
         team = SelectorGroupChat(
             participants= [
-                self.BotStatusAgent,
-                self.BotViewAgent,
+                self.BotInformationAgent,
                 self.MissionPlannerAgent,
                 self.ProcessReviewerAgent,
                 self.CodeExecutionAgent,
