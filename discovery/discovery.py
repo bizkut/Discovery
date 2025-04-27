@@ -395,7 +395,7 @@ class Discovery:
             # --- インベントリ情報を取得 ---
             inventory_info = {}
             # get_inventory_counts は同期メソッド
-            inventory_info = self.skills.get_inventory_counts()
+            inventory_info = await self.skills.get_inventory_counts()
 
             # --- 最終的なレスポンスを作成 ---
             final_result = {
@@ -603,7 +603,7 @@ import asyncio
 async def {wrapper_func_name}():
 {indented_user_code}
 """
-        print(wrapper_code)
+        print(f"\033[32m{wrapper_code}\033[0m")
 
         try:
             # ラッパー関数を定義
@@ -623,7 +623,7 @@ async def {wrapper_func_name}():
             # 実行結果を取得
             output = output_buffer.getvalue()
             error_output = error_buffer.getvalue()
-
+            print(f"\033[32m{output}\033[0m")
             result = {
                 "success": True,
                 "output": output,
@@ -637,7 +637,7 @@ async def {wrapper_func_name}():
             # エラー発生前のエラー出力も取得しておく
             error_output_before_exception = error_buffer.getvalue()
 
-            print(f"\033[31mコード実行中にエラーが発生しました: {error_message}\nエラー詳細:{tb_str}\n実行結果:{error_output_before_exception}\033[0m") # コンソールにもエラー表示
+            print(f"\033[31mコード実行中にエラーが発生しました: {error_message}\nエラー詳細:{tb_str}\033[0m") # コンソールにもエラー表示
 
             result = {
                 "success": False,
@@ -725,15 +725,13 @@ async def run_craft_example():
     
     code = """
 async def main():
-    block = await skills.get_nearest_block('diamond_ore')
-    if not block:
-        print(f"No diamond_ore found nearby.")
-    else:
-        await skills.move_to_position(block['position'].x, block['position'].y, block['position'].z, 1)
-        await skills.collect_block('diamond_ore', 3)
-        #inventory = await skills.get_inventory_counts()
-        #diamond_count = inventory.get('diamond', 0)
-        #print(f"Diamond count after mining: {diamond_count}")
+    # 最寄りの stone ブロックへ1ブロック以内まで移動
+    await skills.go_to_nearest_block('stone', min_distance=1)
+
+    # Botの現在位置と最寄りのstoneの座標を確認して、距離を計算して表示
+    bot_pos = await skills.get_bot_position()
+    nearest_stone = await skills.get_nearest_block('stone')
+    print(nearest_stone.position.x)
 await main()
 """
     while True:
