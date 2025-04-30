@@ -688,12 +688,12 @@ class Skills:
             # 設置方向のマップを作成
             dir_map = {
             'top': Vec3(0, 1, 0),
-                'bottom': Vec3(0, -1, 0),
+            'bottom': Vec3(0, -1, 0),
             'north': Vec3(0, 0, -1),
             'south': Vec3(0, 0, 1),
             'east': Vec3(1, 0, 0),
             'west': Vec3(-1, 0, 0)
-        }
+            }
         
             # 設置方向のリストを作成
             directions = []
@@ -3612,5 +3612,195 @@ class Skills:
             print(f"再接続エラー: {result['message']}")
             import traceback
             traceback.print_exc()
+
+        return result
+
+    async def create_nether_portal(self, check_space_only=False):
+        """
+        黒曜石を使ってネザーゲートを設置し、火打石と打ち金で起動します。
+        最小構成（10個の黒曜石、角なし）で設置します。
+
+        Args:
+            check_space_only (bool): Trueの場合、設置可能なスペースがあるかだけを確認し、実際には設置しない。
+
+        Returns:
+            dict: 結果を含む辞書
+                - success (bool): ゲートの設置と起動に成功した場合はTrue
+                - message (str): 結果メッセージ
+                - portal_base_pos (dict, optional): 設置したゲートの基準座標 {x, y, z}
+                - error (str, optional): エラーコード (insufficient_materials, no_space, placement_failed, activation_failed, verification_failed)
+        """
+        self.bot.chat("ネザーゲートの作成を開始します。")
+        result = {
+            "success": False,
+            "message": "",
+        }
+        Vec3 = require('vec3')
+
+        # --- 1. 材料チェック ---
+        inventory = await self.get_inventory_counts()
+        obsidian_count = inventory.get('obsidian', 0)
+        flint_and_steel_count = inventory.get('flint_and_steel', 0)
+
+        if obsidian_count < 10:
+            result["message"] = f"ネザーゲートの作成に必要な黒曜石が足りません (必要: 10, 所持: {obsidian_count})"
+            result["error"] = "insufficient_materials"
+            self.bot.chat(result["message"])
+            return result
+        if flint_and_steel_count < 1 and not check_space_only:
+            result["message"] = "ネザーゲートの起動に必要な火打石と打ち金がありません"
+            result["error"] = "insufficient_materials"
+            self.bot.chat(result["message"])
+            return result
+
+        # --- 2. スペース検索 (高さ5, 幅4, 深さ1) ---
+        portal_width = 4
+        portal_height = 5
+        search_distance = 15
+        base_pos = None
+        orientation = 'z' # 'x' or 'z'
+
+        base_pos = await self.get_nearest_free_space(portal_width, portal_height,1, search_distance)
+
+        if not base_pos:
+            result["message"] = f"ネザーゲートを設置するための十分なスペース (高さ{portal_height}, 幅{portal_width}) が見つかりませんでした。"
+            result["error"] = "no_space"
+            self.bot.chat(result["message"])
+            return result
+
+        result["portal_base_pos"] = {"x": base_pos.x, "y": base_pos.y, "z": base_pos.z}
+
+        if check_space_only:
+            result["success"] = True
+            result["message"] = f"ネザーゲート設置可能なスペースが見つかりました。座標: ({base_pos.x}, {base_pos.y}, {base_pos.z}), 向き: {orientation}軸方向"
+            self.bot.chat(result["message"])
+            return result
+
+        # スペースに移動
+        move_result = await self.move_to_position(base_pos.x, base_pos.y, base_pos.z, 2)
+        if not move_result["success"]:
+            result["message"] = f"ネザーゲート設置スペースへの移動に失敗しました: {move_result.get('message', '不明')}"
+            result["error"] = "movement_failed"
+            self.bot.chat(result["message"])
+            return result
+
+        # --- 3. ネザーゲートフレーム設置 (10個の黒曜石) ---
+        portal_frame_coords = []
+        # 底辺 (y=0)
+        portal_frame_coords.append(base_pos.offset(0, 0, 0))
+        portal_frame_coords.append(base_pos.offset(1, 0, 0))
+        portal_frame_coords.append(base_pos.offset(2, 0, 0))
+        portal_frame_coords.append(base_pos.offset(3, 0, 0))
+        # 柱 (x=0)
+        portal_frame_coords.append(base_pos.offset(0, 1, 0))
+        portal_frame_coords.append(base_pos.offset(0, 2, 0))
+        portal_frame_coords.append(base_pos.offset(0, 3, 0))
+        portal_frame_coords.append(base_pos.offset(3, 1, 0))
+        portal_frame_coords.append(base_pos.offset(3, 2, 0))
+        portal_frame_coords.append(base_pos.offset(3, 3, 0))
+        # 上辺 (y=4)
+        portal_frame_coords.append(base_pos.offset(0, 4, 0))
+        portal_frame_coords.append(base_pos.offset(1, 4, 0))
+        portal_frame_coords.append(base_pos.offset(2, 4, 0))
+        portal_frame_coords.append(base_pos.offset(3, 4, 0))
+
+        self.bot.chat("ネザーゲートフレームの設置を開始します...")
+        placed_count = 0
+        for coord in portal_frame_coords:
+            place_result = await self.place_block('obsidian', coord.x, coord.y, coord.z)
+            if place_result["success"]:
+                placed_count += 1
+                await asyncio.sleep(0.1) # 設置の間隔を少し空ける
+            else:
+                # 設置失敗時の処理（すでにブロックがある場合などは許容するかもしれない）
+                block_at_coord = self.bot.blockAt(coord)
+                if block_at_coord and block_at_coord.name == 'obsidian':
+                    self.bot.chat(f"座標 ({coord.x}, {coord.y}, {coord.z}) には既に黒曜石があります。スキップします。")
+                    placed_count += 1 # 既に存在する場合もカウント
+                    continue
+                else:
+                    result["message"] = f"ネザーゲートフレームの設置中にエラーが発生しました ({coord.x}, {coord.y}, {coord.z})。理由: {place_result.get('message', '不明')}"
+                    result["error"] = "placement_failed"
+                    self.bot.chat(result["message"])
+                    # TODO: 設置したブロックを撤去する処理を追加するか検討
+                    return result
+
+        if placed_count < 10:
+             # このケースは上のエラーハンドリングでカバーされるはずだが念のため
+             result["message"] = "ネザーゲートフレームの設置に失敗しました。必要な数の黒曜石を設置できませんでした。"
+             result["error"] = "placement_failed"
+             self.bot.chat(result["message"])
+             return result
+
+        self.bot.chat("ネザーゲートフレームの設置が完了しました。")
+
+        # --- 4. ネザーゲート起動 ---
+        self.bot.chat("ネザーゲートの起動を試みます...")
+
+        # 火打石と打ち金を装備
+        equip_result = await self.equip('flint_and_steel')
+        if not equip_result["success"]:
+             result["message"] = "火打石と打ち金の装備に失敗しました。"
+             result["error"] = "activation_failed"
+             self.bot.chat(result["message"])
+             return result
+
+        # 起動ターゲットブロック (フレーム下部の内側の黒曜石)
+        activation_target_coord = None
+        portal_check_coord = None # ポータル生成確認用座標
+        if orientation == 'z':
+            activation_target_coord = base_pos.offset(1, 0, 0) # 底辺の左側
+            portal_check_coord = base_pos.offset(1, 1, 0) # ゲート内部の左下
+        elif orientation == 'x':
+            activation_target_coord = base_pos.offset(0, 0, 1) # 底辺の手前側
+            portal_check_coord = base_pos.offset(0, 1, 1) # ゲート内部の手前下
+
+        activation_target_block = self.bot.blockAt(activation_target_coord)
+        if not activation_target_block or activation_target_block.name != 'obsidian':
+            result["message"] = f"ゲート起動のターゲットブロック (黒曜石) が見つかりません ({activation_target_coord.x}, {activation_target_coord.y}, {activation_target_coord.z})"
+            result["error"] = "activation_failed"
+            self.bot.chat(result["message"])
+            return result
+
+        # ターゲットブロックに近づく (必要であれば)
+        if self.bot.entity.position.distanceTo(activation_target_coord) > 4.5:
+             move_result = await self.move_to_position(activation_target_coord.x, activation_target_coord.y, activation_target_coord.z, 3)
+             if not move_result["success"]:
+                 result["message"] = f"ゲート起動位置への移動に失敗: {move_result.get('message', '不明')}"
+                 result["error"] = "activation_failed"
+                 self.bot.chat(result["message"])
+                 return result
+
+        # ターゲットブロックを見る
+        self.bot.lookAt(activation_target_coord.offset(0.5, 0.5, 0.5), True) # ブロックの中心を見る
+
+        # 火打石と打ち金を使用 (activateBlock ではなく activateItem かもしれない)
+        # Mineflayerの activateBlock はブロック自体にインタラクトする。火打石はブロックに対して使う
+        try:
+            # どの面に対して使用するかを指定 (ここでは上面を仮定 Vec3(0, 1, 0))
+            # activateBlockの第二引数は referenceBlock, 第三引数は faceVector
+            # faceVector はターゲットブロックのどの面をクリックするかを指定
+            # フレーム底の黒曜石の上面をクリックしてゲートを生成する
+            self.bot.activateBlock(activation_target_block, Vec3(0, 1, 0))
+            self.bot.chat(f"座標 ({activation_target_block.position.x}, {activation_target_block.position.y}, {activation_target_block.position.z}) の黒曜石に火打石を使用しました。")
+            await asyncio.sleep(1.0) # ポータル生成待機
+        except Exception as e:
+            result["message"] = f"火打石と打ち金の使用中にエラーが発生しました: {str(e)}"
+            result["error"] = "activation_failed"
+            self.bot.chat(result["message"])
+            import traceback
+            traceback.print_exc()
+            return result
+
+        # --- 5. 起動確認 ---
+        portal_block = self.bot.blockAt(portal_check_coord)
+        if portal_block and portal_block.name == 'nether_portal':
+            result["success"] = True
+            result["message"] = f"ネザーゲートが座標 ({base_pos.x}, {base_pos.y}, {base_pos.z}) に正常に作成・起動されました。"
+            self.bot.chat(result["message"])
+        else:
+            result["message"] = f"ネザーゲートの起動に失敗しました。ポータルブロックが生成されませんでした。確認座標: ({portal_check_coord.x}, {portal_check_coord.y}, {portal_check_coord.z}), 実際のブロック: {portal_block.name if portal_block else 'None'}"
+            result["error"] = "verification_failed"
+            self.bot.chat(result["message"])
 
         return result
