@@ -1075,13 +1075,31 @@ class Skills:
 
     async def view_chest(self,maxDistance=32):
         """
-        最も近いチェストの中身を表示します。
+        近くにあるチェストに移動し、中身を表示します。複数チェストがある場合全てのチェストの中身を表示します。
         
         Returns:
             dict: 結果を含む辞書
                 - success (bool): チェストを表示できた場合はTrue、失敗した場合はFalse
                 - message (str): 結果メッセージ
-                - items (list, optional): チェスト内のアイテムリスト（成功時のみ）
+                - result_list (list, optional): チェスト内のアイテムリスト（成功時のみ）
+
+        Example:
+            >>> view_chest()
+            {
+                'success': True, 
+                'message': 'Found 2 chests.',
+                'result_list':
+                    [
+                        {
+                            'position': {'x': 1, 'y': -60, 'z': 4}, 
+                            'items': [{'name': 'wooden_pickaxe', 'count': 1}, {'name': 'wooden_pickaxe', 'count': 1}, {'name': 'wooden_pickaxe', 'count': 1}, {'name': 'wooden_pickaxe', 'count': 1}]
+                        }, 
+                        {
+                            'position': {'x': -2, 'y': -60, 'z': 0}, 
+                            'items': 'チェストは空です。'
+                        }
+                    ]
+            }
         """
         result = {
             "success": False,
@@ -1091,55 +1109,54 @@ class Skills:
         try:
             # 最も近いチェストを探す
             chest = self.bot.findBlocks({
-                'matching':self._get_item_id('chest'),
+                'matching':self.mcdata.blocksByName['chest'].id,
                 'maxDistance': maxDistance,
-                'count': 1
+                'count': 10
             })
-            if not chest:
+            if not any(True for _ in chest):
                 result["message"] = "近くにチェストが見つかりませんでした。"
                 self.bot.chat(result["message"])
                 return result
+            
+            result_list = []
+            for chest_pos in chest:
+                # チェストまで移動
+                move_result = await self.move_to_position(chest_pos.x, chest_pos.y, chest_pos.z, 2)
+                if not move_result["success"]:
+                    result["message"] = f"チェストへの移動に失敗: {move_result.get('message', '不明なエラー')}"
+                    self.bot.chat(result["message"])
+                    return result
+            
+                # チェストを開く
+                chest_block = self.bot.blockAt(chest_pos)
+                chest_container = self.bot.openContainer(chest_block)
+            
+                # チェスト内のアイテムを取得
+                items = chest_container.containerItems()
+            
+                # アイテムをリストに変換
+                item_list = []
+                result_dict = {}
+                if items:
+                    for item in items:
+                        if item:  # Noneでないアイテムのみ追加
+                            item_list.append({
+                                "name": item.name,
+                                "count": item.count
+                            })
+                if not item_list:
+                    result_dict["position"] = {"x": chest_pos.x, "y": chest_pos.y, "z": chest_pos.z}
+                    result_dict["items"] = "チェストは空です。"
+                else:
+                    result_dict["position"] = {"x": chest_pos.x, "y": chest_pos.y, "z": chest_pos.z}
+                    result_dict["items"] = item_list
+                result_list.append(result_dict)
                 
-            # チェストまで移動
-            await self.move_to_position(chest.position.x, chest.position.y, chest.position.z, 2)
-            
-            # チェストを開く
-            chest_container = self.bot.openContainer(chest)
-            
-            # チェスト内のアイテムを取得
-            items = chest_container.containerItems()
-            
-            # アイテムをリストに変換
-            item_list = []
-            if items:
-                for item in items:
-                    if item:  # Noneでないアイテムのみ追加
-                        item_list.append({
-                            "name": item.name,
-                            "count": item.count
-                        })
-            
-            # 結果を生成
-            if not item_list:
-                result["message"] = "チェストは空です。"
-                self.bot.chat(result["message"])
-            else:
-                # アイテムリストをテキストに変換
-                items_text = []
-                for item in item_list:
-                    items_text.append(f"{item['name']} x {item['count']}")
-                
-                result["message"] = f"チェストの中身: {', '.join(items_text)}"
-                result["items"] = item_list
-                print_data = "チェストには以下のアイテムが含まれています:\n"
-                for item in item_list:
-                    print_data += f"{item['name']} x {item['count']}\n"
-                self.bot.chat(print_data)
-            
-            # チェストを閉じる
-            chest_container.close()
+                chest_container.close()
             
             result["success"] = True
+            result["message"] = f"Found {len(result_list)} chests."
+            result["result_list"] = result_list
             return result
             
         except Exception as e:
