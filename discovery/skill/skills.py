@@ -1606,6 +1606,22 @@ class Skills:
                 - collected (int): 実際に収集できたブロックの数。
                 - block_name (str): 収集しようとした元のブロック名。
                 - error (str, optional): エラーが発生した場合のエラーコード。
+        Example:
+            >> await skills.collect_block('cobblestone', num=11)
+            {
+                "success": True,
+                "message": "11個のcobblestoneを収集しました。",
+                "collected": 11,
+                "block_name": "cobblestone"
+            }
+            >> await skills.collect_block('Jungle Log', num=11)
+            {
+                'success': False,
+                'message': '近くにJungle Logが見つかりません。',
+                'collected': 0,
+                'block_name': 'Jungle Log',
+                'error': 'no_blocks_found'
+            }
         """
         result = {
             "success": False,
