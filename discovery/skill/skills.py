@@ -131,13 +131,10 @@ class Skills:
         if isinstance(position, tuple) and len(position) == 3:
             try:
                 position = Vec3(position[0], position[1], position[2])
-                print("\033[90mDebug: Converted position tuple to Vec3.\033[0m")
             except Exception as e:
-                print(f"\033[91mError converting position tuple {position} to Vec3: {e}\033[0m")
                 self.bot.chat("座標の型変換エラーが発生しました。")
                 return [] # エラー時は空リストを返す
         elif not hasattr(position, 'offset'): # offset メソッドがない場合 (Vec3 でない場合)
-            print(f"\033[91mError: Invalid position object type: {type(position)}. Expected Vec3 or tuple.\033[0m")
             self.bot.chat("無効な座標オブジェクトタイプです。")
             return [] # エラー時は空リストを返す
         # --- ここまで追加 --- 
@@ -1697,7 +1694,6 @@ class Skills:
             
             try:
                 move_to_result = await self.move_to_position(block_pos.x, block_pos.y, block_pos.z, min_distance=2)
-                print(move_to_result)
                 if move_to_result["success"]:
                     self.bot.collectBlock.collect(block)
                     collected += 1
