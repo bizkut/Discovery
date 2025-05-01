@@ -94,7 +94,7 @@ class Auto_gen:
 
         self.MissionPlannerAgent = AssistantAgent(
             name="MissionPlannerAgent",
-            model_client=self.model_client_o1,
+            model_client=self.model_client,
             description="MinecraftのBotの状態をもとに、目標達成のためのタスクを立案するエージェント",
             system_message=f"""
             あなたは、マインクラフトを熟知した高度なAIエージェントであり、最終目標達成のための**検証可能なタスク**を立案するエージェントです。
@@ -293,8 +293,8 @@ class Auto_gen:
 
             **利用可能なツール:**
             - `get_code_execution_history_tool`: 直近5回のコード実行履歴（コード、結果、エラー）を取得します。
-            - `get_skills_list_tool`: 利用可能な全スキル（高レベル関数）の詳細情報を取得します。
-            - `get_skill_code_tool`: 指定したスキルのソースコード（低レベルAPIの使用例）を取得します。
+            - `get_skills_list_tool`: 利用可能なスキル（高レベル関数）の詳細情報を取得します。引数にスキル名のリストを渡すことで、特定のスキルのみの情報を取得できます。
+            - `get_skill_code_tool`: 指定したスキル名**のリスト**に対応するソースコード（低レベルAPIの使用例）を取得します。
 
             **重要:** エラーが発生した場合でも、エラー発生箇所より前のコードは実行されている可能性があります。これにより、意図せずタスク目標が達成されている、あるいは目標に近い状態になっている可能性があります。
 
@@ -305,7 +305,7 @@ class Auto_gen:
             4.  **エラー分析 (タスク未完了時):** ここからがデバッグの本番です。あなたの高度な分析能力と利用可能なツールを最大限に活用してください。
                 *   **根本原因の探求:** 提供されたエラーメッセージとトレースバックを注意深く読み解きます。
                 *   **実行履歴の活用:** **必ず `get_code_execution_history_tool` を使用して** 直近の実行履歴を確認し、以前の試行錯誤、特に同様のエラーが繰り返されていないか、エラー直前の成功したステップは何かなどを分析してください。
-                *   **スキル情報の活用:** 必要に応じて **`get_skills_list_tool` や `get_skill_code_tool` を使用して**、エラーに関連する可能性のあるスキルの詳細な仕様、引数、内部実装（低レベルAPIの使用例）を確認してください。APIの誤用や予期しない動作がないか分析します。
+                *   **スキル情報の活用:** 必要に応じて **`get_skills_list_tool` や `get_skill_code_tool` を使用して**、エラーに関連する可能性のあるスキルの詳細な仕様、引数、内部実装（低レベルAPIの使用例）を確認してください。`get_skill_code_tool` を使用する際は、調査したいスキル名の**リスト**を引数として渡してください。APIの誤用や予期しない動作がないか分析します。
                 *   **ステップバイステップ思考:** エラーが発生したコード箇所、関連するデータフロー、Botの状態遷移、ツールから得られた情報などを**統合的に分析**し、問題の核心を特定してください。
             5.  **修正案・調査手順の提案 (タスク未完了時):** 分析に基づき、質の高い修正案や調査手順を提案します。
                 *   **根本的解決:** 単にエラーを回避するだけでなく、特定した根本原因に対処する、**より堅牢で根本的な解決策**を優先して提案してください。
@@ -386,11 +386,11 @@ class Auto_gen:
         )
         self.get_skills_list_tool = FunctionTool(
             self.get_skills_list,
-            description="利用可能な全ての高レベルスキル（`skills`オブジェクトのメソッド）に関する**詳細情報**を取得します。各スキルについて、**完全なシグネチャ、詳細な説明、引数や戻り値を含む包括的な使用方法**を提供します。特定のスキルの詳細な理解が必要な場合や、利用可能な全オプションを詳細に調査したい場合に使用してください。注意: 全てのスキルを返すため、出力は長くなる可能性があります。"
+            description="利用可能な高レベルスキル（`skills`オブジェクトのメソッド）に関する**詳細情報**を取得します。各スキルについて、**完全なシグネチャ、詳細な説明、引数や戻り値を含む包括的な使用方法**を提供します。引数 `skill_names` (文字列のリスト) を指定することで、特定のスキルセットの情報のみを取得できます。指定しない場合、利用可能な全スキルを返します。"
         )
         self.get_skill_code_tool = FunctionTool(
             self._get_skill_code_wrapper,
-            description="指定されたMineCraftBotのスキル関数のソースコードを取得できるツールです。 (docstring除外)。スキル関数の詳細な動作や引数を確認したい場合に使用します。"
+            description="指定されたMineCraftBotのスキル関数名**のリスト** (`skill_names`: list[str]) に対応するソースコードを取得できるツールです (docstring除外)。スキル関数の詳細な動作や低レベルAPIの利用方法を確認したい場合に使用します。"
         )
         # Add the execute_python_code tool definition
         self.execute_python_code_tool = FunctionTool(
@@ -400,7 +400,7 @@ class Auto_gen:
         # Add the new skill summary tool definition
         self.get_skill_summary_tool = FunctionTool(
             self._get_skill_summary_wrapper,
-            description="利用可能な高レベルスキル（`skills`オブジェクトのメソッド）の**簡潔な概要**を取得します。各スキルについて**名前と短い（最初の行の）説明**のみをリストします。Botの能力の**全体像を素早く把握したい**場合や、詳細情報を`get_skills_list_tool`で要求する前に関連スキル候補を見つけたい場合に使用してください。"
+            description="利用可能な高レベルスキル（`skills`オブジェクトのメソッド）の**簡潔な概要**を取得します。各スキルについて**名前と短い（最初の行の）説明**のみをリストします。引数 `skill_names` (文字列のリスト) を指定することで、特定のスキルセットの概要のみを取得できます。指定しない場合、利用可能な全スキルの概要を返します。Botの能力の**全体像を素早く把握したい**場合や、詳細情報を`get_skills_list_tool`で要求する前に関連スキル候補を見つけたい場合に使用してください。"
         )
         # Add the new execution history tool definition
         self.get_code_execution_history_tool = FunctionTool(
@@ -409,10 +409,20 @@ class Auto_gen:
         )
     async def get_skills_list(self) -> str:
         """Skillsクラスで利用可能な関数の情報を取得し、LLMが読みやすい形式の英語文字列で返す"""
-        skills_list = await self.discovery.get_skills_list() # 新しい形式のリストを取得
+        # skill_namesが指定されていない場合は、discovery.get_skills_listにNoneを渡す
+        # (discovery側でNoneの場合は全スキルを返すように修正されている想定。もしそうでなければ discovery.get_all_skill_names() のようなものを呼び出す)
+        # 現状のdiscovery.pyではNoneだと空リストが返るため、ここでは引数なし=全スキル取得の意図でNoneを渡さないようにする。
+        # 全スキル名を取得するメソッドがdiscoveryにあるか確認する。なければ実装するか、ここで全メソッドを取得する。
+        # → inspect を使ってここで全メソッド名を取得し、それをdiscoveryに渡すのが良さそう。
+        all_skill_names = []
+        if self.discovery and self.discovery.skills:
+            import inspect
+            all_skill_names = [name for name, method in inspect.getmembers(self.discovery.skills, inspect.ismethod) if not name.startswith('_')]
+
+        skills_list = await self.discovery.get_skills_list(skill_names=all_skill_names) # 全スキル名を渡す
 
         if not skills_list:
-            return "No available skills found."
+            return "No available skills found or Skills object not initialized."
 
         output_parts = ["Available Skills:"]
         for skill in skills_list:
@@ -437,10 +447,16 @@ class Auto_gen:
     async def _get_skill_summary_wrapper(self) -> str:
         """Retrieves only the names and descriptions of available skills, formatted concisely."""
         print("\033[34mTool:GetSkillSummary called\033[0m")
-        skills_list = await self.discovery.get_skills_list()
+        # 全スキル名を取得
+        all_skill_names = []
+        if self.discovery and self.discovery.skills:
+            import inspect
+            all_skill_names = [name for name, method in inspect.getmembers(self.discovery.skills, inspect.ismethod) if not name.startswith('_')]
+
+        skills_list = await self.discovery.get_skills_list(skill_names=all_skill_names)
 
         if not skills_list:
-            return "No available skills found."
+            return "No available skills found or Skills object not initialized."
 
         output_lines = ["Available Skill Summaries:"]
         for skill in skills_list:
@@ -452,17 +468,22 @@ class Auto_gen:
 
         return "\n".join(output_lines)
     
-    async def _get_skill_code_wrapper(self, skill_name: str) -> str:
+    async def _get_skill_code_wrapper(self, skill_names: list[str]) -> str:
         """discovery.get_skill_codeのラッパーです。LLM用にフォーマットされた文字列を返します。"""
-        print(f"\033[34mTool:GetSkillCode called for skill: {skill_name}\033[0m")
-        result = await self.discovery.get_skill_code(skill_name)
+        print(f"\033[34mTool:GetSkillCode called for skills: {skill_names}\033[0m")
+        results = await self.discovery.get_skill_code(skill_names) # リストを渡す
         
-        if result.get("success", False):
-            code = result.get("message", "")
-            return f"Source code for skill '{skill_name}':\n```python\n{code}\n```"
-        else:
-            error_message = result.get("message", "Unknown error")
-            return f"Error getting source code for skill '{skill_name}': {error_message}"
+        output_parts = []
+        for skill_name, result in results.items():
+            if result.get("success", False):
+                code = result.get("code", "") # 'message' ではなく 'code' キーを使う
+                output_parts.append(f"Source code for skill '{skill_name}':\n```python\n{code}\n```")
+            else:
+                error_message = result.get("message", "Unknown error")
+                output_parts.append(f"Error getting source code for skill '{skill_name}': {error_message}")
+        
+        # 各結果を空行2つで区切る
+        return "\n\n".join(output_parts)
     
     # Add the wrapper method for execute_python_code
     async def _execute_python_code_wrapper(self, code_string: str) -> str:
