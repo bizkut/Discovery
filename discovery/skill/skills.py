@@ -1587,7 +1587,7 @@ class Skills:
 
     async def collect_block(self, block_name, num=1, exclude=None):
         """
-        指定された名前のブロックを収集します。
+        指定された名前のブロックを指定個数、採掘・収集します。
         最も近くにある安全に採掘可能なブロックを探し、適切なツールを装備して収集を試みます。
         インベントリがいっぱいの場合や適切なツールがない場合などは失敗します。
 
@@ -1603,7 +1603,7 @@ class Skills:
             dict: 収集結果の詳細を含む辞書。
                 - success (bool): 1つ以上のブロック収集に成功した場合 True、そうでなければ False。
                 - message (str): 処理結果を示すメッセージ。
-                - collected (int): 実際に収集できたブロックの数。
+                - result (dict): 収集後のインベントリ情報。
                 - block_name (str): 収集しようとした元のブロック名。
                 - error (str, optional): エラーが発生した場合のエラーコード。
         Example:
@@ -1611,14 +1611,14 @@ class Skills:
             {
                 "success": True,
                 "message": "11個のcobblestoneを収集しました。",
-                "collected": 11,
+                "result": {'cobblestone': 11, 'stone_pickaxe': 1},
                 "block_name": "cobblestone"
             }
             >> await skills.collect_block('Jungle Log', num=11)
             {
                 'success': False,
                 'message': '近くにJungle Logが見つかりません。',
-                'collected': 0,
+                'result': {'oak_log': 12, 'wooden_pickaxe': 1}
                 'block_name': 'Jungle Log',
                 'error': 'no_blocks_found'
             }
@@ -1626,7 +1626,7 @@ class Skills:
         result = {
             "success": False,
             "message": "",
-            "collected": 0,
+            "result": {},
             "block_name": block_name
         }
         print(f"{block_name}のブロックを取得します。")
@@ -1649,8 +1649,6 @@ class Skills:
         # dirtの特殊処理
         if block_name == 'dirt':
             blocktypes.append('grass_block')
-
-        collected = 0
         
         for i in range(num):
             blocks = []
@@ -1673,10 +1671,7 @@ class Skills:
             movements.dontMineUnderFallingBlock = False
             blocks = [block for block in blocks if movements.safeToBreak(block)]
             if not blocks:
-                if collected == 0:
-                    result["message"] = f"近くに{block_name}が見つかりません。"
-                else:
-                    result["message"] = f"これ以上{block_name}が見つかりません。"
+                result["message"] = f"近くに{block_name}が見つかりません。"
                 result["error"] = "no_blocks_found"
                 break
                 
@@ -1703,8 +1698,7 @@ class Skills:
                 else:
                     self.bot.dig(block)
                     await asyncio.sleep(0.3)
-                    await self.pickup_nearby_items(item_name=block_name)
-                    collected += 1
+                    await self.pickup_nearby_items()
                     await self.auto_light()
             except Exception as e:
                 if str(e) == 'NoChests':
@@ -1718,10 +1712,10 @@ class Skills:
                     print(result["message"])
                     continue
                     
-        result["collected"] = collected
-        result["success"] = collected > 0
+        result["result"] = await self.get_inventory_counts()
+        result["success"] = True
         if not result["message"]:
-            result["message"] = f"{block_name}を{collected}個収集しました。"
+            result["message"] = f"{block_name}を収集しました。"
         
         print(result)
         return result
@@ -2646,7 +2640,6 @@ class Skills:
         for nearest_item in nearest_item_list:
             # アイテムに近づく
             block_pos = self.bot.blockAt(nearest_item.position)
-            print(f"block_pos: {block_pos}")
             if block_pos:
                 move_result = await self.move_to_position(block_pos.position.x, block_pos.position.y, block_pos.position.z, 1)
                 if not move_result["success"]:
@@ -2682,6 +2675,9 @@ class Skills:
                 - position (dict): 破壊を試みた位置 {x, y, z}
                 - block_name (str, optional): 破壊したブロックの名前
                 - error (str, optional): エラーがある場合のエラーコード
+        
+        Example:
+            >>> await skills.break_block_at(100, -61, 100)
         """
         self.bot.chat(f"{x}, {y}, {z}のブロックを破壊します。")
         print(f"{x}, {y}, {z}のブロックを破壊します。")
@@ -2722,17 +2718,9 @@ class Skills:
             return result
             
         # ブロックまでの距離を確認
-        if self.bot.entity.position.distanceTo(block.position) > 4.5:
-            try:
-                # パスファインダーの設定
-                if hasattr(self.pathfinder, 'Movements') and hasattr(self.pathfinder.goals, 'GoalNear'):
-                    await self.move_to_position(x, y, z, 4,canPlaceOn=False,allow1by1towers=False)
-            except Exception as e:
-                result["message"] = f"ブロックへの移動中にエラーが発生しました: {str(e)}"
-                result["error"] = "movement_error"
-                self.bot.chat(result["message"])
-                print(result)
-                return result
+        move_result = await self.move_to_position(x, y, z, 4,canPlaceOn=False,allow1by1towers=False)
+        if not move_result["success"]:
+            return move_result
 
         # クリエイティブモードでない場合は適切なツールを装備
         if self.bot.game.gameMode != 'creative':
