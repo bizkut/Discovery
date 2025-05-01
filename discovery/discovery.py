@@ -14,6 +14,7 @@ import contextlib
 import traceback
 import collections
 import base64
+import time
 from playwright.async_api import async_playwright
 
 class Discovery:
@@ -29,6 +30,7 @@ class Discovery:
         self.is_connected = False
         self.code_execution_history = collections.deque(maxlen=5)
         self.viewer = None
+        self.opend_browser = None
     
     def load_env(self):
         self.minecraft_host = os.getenv("MINECRAFT_HOST", "host.docker.internal")
@@ -42,12 +44,10 @@ class Discovery:
         os.environ['NODE_PATH'] = "/workspaces/Voyager/mineflayer/node_modules"
         # pathfinder
         self.pathfinder = require("mineflayer-pathfinder")
-        self.collectblock = require("mineflayer-collectblock").plugin
         self.web_inventory = require("mineflayer-web-inventory")
         self.mineflayer_tool = require("mineflayer-tool").plugin
         self.pvp = require("mineflayer-pvp").plugin
         self.bot.loadPlugin(self.pathfinder.pathfinder)
-        self.bot.loadPlugin(self.collectblock)
         self.bot.loadPlugin(self.web_inventory)
         self.bot.loadPlugin(self.mineflayer_tool)
         self.bot.loadPlugin(self.pvp)
@@ -55,8 +55,6 @@ class Discovery:
         
         # Web Inventoryを有効化
         self.web_inventory(self.bot,{"port":self.web_inventory_port})
-        # ブラウザでWeb Inventoryを開く
-        webbrowser.open(f'http://localhost:{self.web_inventory_port}')
     
     def bot_join(self):
         """ボットをサーバーに接続します"""
@@ -72,22 +70,21 @@ class Discovery:
         
         # スポーン時の処理
         def handle_spawn(*args):
-            print("Botがスポーンしました")
-            self.bot.chat("Botがスポーンしました")
+            print("\033[92mBotがスポーンしました\033[0m")
             self.is_connected = True
         
         # エラー時の処理
         def handle_error(err, *args):
-            print(f"ボット接続エラー: {err}")
+            print(f"\033[91mボット接続エラー: {err}\033[0m")
             self.is_connected = False
             
         # 切断時の処理
         def handle_end(*args):
-            print("サーバー接続が終了しました")
+            print("\033[91m\nBOTを切断しました\033[0m")
             self.is_connected = False
         
         # ビューアーを開く (初回のみ)
-        if self.viewer is None:
+        if self.viewer is None and self.opend_browser is None:
             try:
                 print(f"Starting Prismarine Viewer on port {self.prismarine_viewer_port}...")
                 self.viewer = self.viewer_module.mineflayer(self.bot, {
@@ -95,8 +92,11 @@ class Discovery:
                     "port": int(self.prismarine_viewer_port)
                 })
                 # ブラウザ自動起動はコメントアウト (必要なら解除)
-                # webbrowser.open(f'http://localhost:{self.prismarine_viewer_port}')
+                webbrowser.open(f'http://localhost:{self.prismarine_viewer_port}')
+                # ブラウザでWeb Inventoryを開く
+                webbrowser.open(f'http://localhost:{self.web_inventory_port}')
                 print(f"Prismarine Viewer started successfully.")
+                self.opend_browser = True
             except Exception as e:
                 print(f"Failed to start Prismarine Viewer: {e}")
                 self.viewer = None # 失敗したらNoneに戻す
@@ -109,6 +109,10 @@ class Discovery:
         self.bot.on('end', handle_end)
         self.mcdata = require("minecraft-data")(self.bot.version)
         self.load_plugins()
+        print(f"enableServerListing: {self.bot.settings.enableServerListing}")
+        while not self.bot.settings.enableServerListing:
+            print("サーバー接続中...")
+            time.sleep(1)
 
     async def check_server_active(self, timeout=10):
         """
@@ -205,7 +209,6 @@ class Discovery:
         self.bot = None
         self.is_connected = False
         self.viewer = None
-        print("Internal bot state reset.")
 
         # --- クリーンアップ処理 (失敗しても続行) ---
         # 元のViewerを閉じる試み
@@ -213,9 +216,8 @@ class Discovery:
             # hasattrもタイムアウトする可能性があるためtryブロック内に含める
             if original_viewer and hasattr(original_viewer, 'close'):
                 original_viewer.close()
-                print("Original Prismarine Viewer closed.")
         except Exception as e:
-            print(f"Error closing original Prismarine Viewer (ignored): {e}")
+            print(f"\033[31mError closing original Prismarine Viewer (ignored): {e}\033[0m")
 
         # 元のbotオブジェクトに関連付けられたviewerを閉じる試み
         try:
@@ -227,30 +229,25 @@ class Discovery:
                     if hasattr(original_bot, 'viewer'):
                          bot_viewer = original_bot.viewer
                 except Exception as e_getattr:
-                    print(f"Error accessing original_bot.viewer (ignored): {e_getattr}")
+                    print(f"\033[31mError accessing original_bot.viewer (ignored): {e_getattr}\033[0m")
 
                 # viewerオブジェクトのclose試行もtry-except
                 try:
                     if bot_viewer and hasattr(bot_viewer, 'close'):
                         bot_viewer.close()
-                        print("Original Prismarine Viewer (bot.viewer) closed.")
                 except Exception as e_close:
-                     print(f"Error closing bot_viewer (ignored): {e_close}")
+                     print(f"\033[31mError closing bot_viewer (ignored): {e_close}\033[0m")
         except Exception as e:
             # botオブジェクト自体へのアクセス等で予期せぬエラーが出た場合
-            print(f"Error during bot.viewer cleanup (ignored): {e}")
+            print(f"\033[31mError during bot.viewer cleanup (ignored): {e}\033[0m")
 
         # 元のボットを切断する試み
         try:
             # hasattrもタイムアウトする可能性があるためtryブロック内に含める
             if original_bot and hasattr(original_bot, 'quit'):
-                 print("Attempting to quit original bot instance...")
                  original_bot.quit()
-                 print("Original bot instance quit command sent.")
         except Exception as e:
-            print(f"Error quitting original bot instance (ignored): {e}")
-
-        print("Bot disconnection process complete (cleanup attempted).")
+            print(f"\033[31mError quitting original bot instance (ignored): {e}\033[0m")
 
     async def reconnect_bot(self, timeout=15):
         """
@@ -275,6 +272,7 @@ class Discovery:
 
     async def get_bot_status(self, retry_count=0, max_retries=1):
         """ボットの状態と周辺情報（バイオーム、時間、体力、空腹度、エンティティ、インベントリ、ブロック分類）を取得"""
+        await self.check_server_active()
         # 接続状態とボットインスタンスの存在をより確実にチェック
         if not self.bot or not self.is_connected:
             print("エラー: ボットが接続されていないか、初期化されていません。")
@@ -416,17 +414,30 @@ class Discovery:
             traceback.print_exc()
             return None
         
-    async def get_skills_list(self):
-        """Skillsクラスで利用可能な関数（メソッド）の名前、説明、非同期フラグのリストを取得"""
+    async def get_skills_list(self, skill_names: list[str] | None = None):
+        """
+        Skillsクラスで利用可能な指定された関数（メソッド）の名前、説明、使用法のリストを取得します。
+        skill_namesがNoneまたは空の場合、空のリストを返します。
+
+        Args:
+            skill_names (list[str] | None, optional): 詳細を取得したいスキル名のリスト。 Defaults to None.
+
+        Returns:
+            list: 各スキル情報を含む辞書のリスト。
+        """
         if self.skills is None:
             print("エラー: Skillsが初期化されていません")
             return [] # 空のリストを返す
 
+        # skill_namesがNoneまたは空なら空リストを返す
+        if not skill_names:
+            return []
+
         skill_list = []
         # inspect.getmembersでskillsオブジェクトのメソッドを取得
         for name, method in inspect.getmembers(self.skills, inspect.ismethod):
-            # アンダースコアで始まらない公開メソッドのみを対象とする
-            if not name.startswith('_'):
+            # 指定されたリストに含まれ、かつアンダースコアで始まらない公開メソッドのみを対象とする
+            if name in skill_names and not name.startswith('_'):
                 # docstringを取得し、整形
                 docstring = inspect.cleandoc(method.__doc__) if method.__doc__ else ""
                 description_lines = []
@@ -483,27 +494,26 @@ class Discovery:
         # 名前順にソートして返す (ソートキーも変更)
         return sorted(skill_list, key=lambda x: x['name'])
     
-    async def get_skill_code(self, skill_name: str):
-        """指定されたスキル関数のソースコードを取得 (docstring除外)"""
-        result = {
-            "success": False,
-            "message": ""
-        }
+    async def get_skill_code(self, skill_names: list[str]):
+        """指定されたスキル関数名のリストに対応するソースコードを取得 (docstring除外)。
+
+        Args:
+            skill_names (list[str]): ソースコードを取得したいスキル名のリスト。
+
+        Returns:
+            dict: 各スキル名とそのソースコードまたはエラー情報を含む辞書。
+                  例: {'skill_name': {'success': bool, 'message': str, 'code': str | None}}
+        """
+        results = {}
         if self.skills is None:
-            result["message"] = "エラー: Skillsが初期化されていません"
-            return result
-
-        # skill_nameに対応するメソッドを取得
-        try:
-            method = getattr(self.skills, skill_name)
-        except AttributeError:
-            result["message"] = f"エラー: スキル関数 '{skill_name}' が見つかりません"
-            return result
-
-        # メソッドが呼び出し可能で、アンダースコアで始まらないことを確認
-        if not callable(method) or skill_name.startswith('_'):
-            result["message"] = f"エラー: スキル関数 '{skill_name}' が見つかりません、またはアクセスできません"
-            return result
+            # skillsがない場合は、すべてのスキル名に対してエラーを返す
+            for name in skill_names:
+                results[name] = {
+                    "success": False,
+                    "message": "エラー: Skillsが初期化されていません",
+                    "code": None
+                }
+            return results
 
         # --- Docstringを除去するTransformer --- (関数内に定義)
         class DocstringRemover(ast.NodeTransformer):
@@ -529,49 +539,71 @@ class Discovery:
                 self.generic_visit(node)
                 return node
 
-        # メソッドのソースコードを取得し、docstringを除去
-        try:
-            source_code = inspect.getsource(method)
-            # ソースコードのインデントを除去 (ASTパース前にdedentが必要)
-            dedented_source_code = textwrap.dedent(source_code)
+        for skill_name in skill_names:
+            single_result = {
+                "success": False,
+                "message": "",
+                "code": None
+            }
 
-            # ASTにパース
-            tree = ast.parse(dedented_source_code)
+            # skill_nameに対応するメソッドを取得
+            try:
+                method = getattr(self.skills, skill_name)
+            except AttributeError:
+                single_result["message"] = f"エラー: スキル関数 '{skill_name}' が見つかりません"
+                results[skill_name] = single_result
+                continue # 次のスキルへ
 
-            # Docstringを削除するTransformerを適用
-            transformer = DocstringRemover()
-            new_tree = transformer.visit(tree)
-            ast.fix_missing_locations(new_tree) # Location情報を修正
+            # メソッドが呼び出し可能で、アンダースコアで始まらないことを確認
+            if not callable(method) or skill_name.startswith('_'):
+                single_result["message"] = f"エラー: スキル関数 '{skill_name}' が見つかりません、またはアクセスできません"
+                results[skill_name] = single_result
+                continue # 次のスキルへ
 
-            # ASTをソースコード文字列に戻す (Python 3.9+)
-            # ast.unparse はインデントを再構築する
-            code_without_docstring = ast.unparse(new_tree)
-            result["success"] = True
-            result["message"] = code_without_docstring
-            return result
+            # メソッドのソースコードを取得し、docstringを除去
+            try:
+                source_code = inspect.getsource(method)
+                # ソースコードのインデントを除去 (ASTパース前にdedentが必要)
+                dedented_source_code = textwrap.dedent(source_code)
 
-        except (TypeError, OSError) as e:
-            # ソースコードが取得できない場合
-            result["message"] = f"エラー: スキル関数 '{skill_name}' のソースコードを取得できませんでした: {e}"
-            return result
-        except SyntaxError as e:
-            # AST パース失敗時のエラーハンドリング
-            result["message"] = f"エラー: スキル関数 '{skill_name}' のソースコードの解析に失敗しました: {e}"
-            return result
-        except AttributeError as e:
-            # ast.unparse がない場合のエラー (Python 3.9未満)
-            if "'module' object has no attribute 'unparse'" in str(e):
-                result["message"] = "エラー: この機能にはPython 3.9以上が必要です (ast.unparse)。"
-                return result
-            else:
-                result["message"] = f"エラー: 予期せぬエラーが発生しました: {e}"
-                return result
-    
+                # ASTにパース
+                tree = ast.parse(dedented_source_code)
+
+                # Docstringを削除するTransformerを適用
+                transformer = DocstringRemover()
+                new_tree = transformer.visit(tree)
+                ast.fix_missing_locations(new_tree) # Location情報を修正
+
+                # ASTをソースコード文字列に戻す (Python 3.9+)
+                # ast.unparse はインデントを再構築する
+                code_without_docstring = ast.unparse(new_tree)
+                single_result["success"] = True
+                single_result["message"] = "ソースコードを正常に取得しました。"
+                single_result["code"] = code_without_docstring
+
+            except (TypeError, OSError) as e:
+                # ソースコードが取得できない場合
+                single_result["message"] = f"エラー: スキル関数 '{skill_name}' のソースコードを取得できませんでした: {e}"
+            except SyntaxError as e:
+                # AST パース失敗時のエラーハンドリング
+                single_result["message"] = f"エラー: スキル関数 '{skill_name}' のソースコードの解析に失敗しました: {e}"
+            except AttributeError as e:
+                # ast.unparse がない場合のエラー (Python 3.9未満)
+                if "'module' object has no attribute 'unparse'" in str(e):
+                    single_result["message"] = "エラー: この機能にはPython 3.9以上が必要です (ast.unparse)。"
+                else:
+                    single_result["message"] = f"エラー: 予期せぬエラーが発生しました: {e}"
+            
+            results[skill_name] = single_result
+
+        return results
+
     async def execute_python_code(self, code_string: str, wrapper_func_name: str = "main"):
         """
         渡されたPythonコード文字列を、指定された名前の非同期関数内で実行します。
         デフォルトの関数名は 'main' です。
         """
+        await self.check_server_active()
         # Check if bot and skills are initialized correctly and bot is connected
         if not self.bot or not self.skills or not self.is_connected:
             error_msg = "エラー: ボットまたはスキルが初期化されていないか、サーバーに接続されていません。"
@@ -623,7 +655,9 @@ async def {wrapper_func_name}():
             # 実行結果を取得
             output = output_buffer.getvalue()
             error_output = error_buffer.getvalue()
-            print(f"\033[32m{output}\033[0m")
+            print(f"\033[32mOutput:\n{output}\033[0m")
+            if error_output:
+                print(f"\033[31mError:\n{error_output}\033[0m")
             result = {
                 "success": True,
                 "output": output,
@@ -645,8 +679,9 @@ async def {wrapper_func_name}():
                 "traceback": tb_str,
                 "error_output": error_output_before_exception
             }
-        
-        self.code_execution_history.append({"code": code_string, "result": result})
+        finally:
+            # コード実行履歴に追加
+            self.code_execution_history.append({"code": code_string, "result": result})
         
         return result
 
@@ -663,6 +698,8 @@ async def {wrapper_func_name}():
         Returns:
             str | None: Base64エンコードされたPNG画像文字列。エラー時はNone。
         """
+        await self.check_server_active() # サーバー接続確認は先に行う
+        self.bot.chat(f"スクリーンショットを取得します。(Direction: {direction or 'current'})")
         print(f"\033[34mCapturing screenshot from Prismarine Viewer (Direction: {direction or 'current'})...\033[0m")
         if not self.is_server_active():
             print("エラー: ボットが接続されていません。スクリーンショットを取得できません。")
@@ -671,7 +708,6 @@ async def {wrapper_func_name}():
         if direction:
             if self.skills: # skills オブジェクトが初期化されているか確認
                 try:
-                    print(f"\033[34mLooking towards {direction}...\033[0m")
                     look_result = await self.skills.look_at_direction(direction)
                     if not look_result or not look_result.get("success", False):
                          print(f"\033[93mWarning: Failed to look towards {direction}. Proceeding with current view. Message: {look_result.get('message', 'N/A') if look_result else 'N/A'}\033[0m")
@@ -724,23 +760,20 @@ async def run_craft_example():
         return
     
     code = """
-async def main():
-    # 最寄りの stone ブロックへ1ブロック以内まで移動
-    await skills.go_to_nearest_block('stone', min_distance=1)
-
-    # Botの現在位置と最寄りのstoneの座標を確認して、距離を計算して表示
-    bot_pos = await skills.get_bot_position()
-    nearest_stone = await skills.get_nearest_block('stone')
-    print(nearest_stone.position.x)
-await main()
+result = await skills.collect_block('oak_log', num=5)
+print(result)
+inventory = await skills.get_inventory_counts()
+oak_logs = inventory.get('oak_log', 0)
+print(f"Collected {oak_logs} oak_log.")
 """
     while True:
         try:
             print(input("Enter: "))
-            #await skills.move_to_position(76, 52, -110,0)
-            print(await discovery.execute_python_code(code))
-            #wait skills.move_to_position(67, 63, -11,0)
-            #await skills.move_to_position(67, 63, -11,0)
+            #await discovery.get_screenshot_base64(direction='north')
+            #print(await discovery.execute_python_code(code))
+            result = await skills.collect_block('oak_log', num=5)
+            #print(await skills.pickup_nearby_items())
+            
         except Exception as e:
             print(f"エラーが発生しました: {str(e)}")
             import traceback
