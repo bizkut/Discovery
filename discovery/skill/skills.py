@@ -2749,7 +2749,7 @@ class Skills:
                 
         # ブロックを破壊
         try:
-            await self.bot.dig(block, True)  # 第2引数をTrueにすることで採掘が完了するまで待機
+            self.bot.dig(block, True)  # 第2引数をTrueにすることで採掘が完了するまで待機
             result["message"] = f"{block.name}を座標({x:.1f}, {y:.1f}, {z:.1f})で破壊しました"
             result["success"] = True
             self.bot.chat(result["message"])
