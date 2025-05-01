@@ -5,22 +5,32 @@ import yaml
 from discovery import Discovery
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from typing import List
 
 from autogen_agentchat.agents import AssistantAgent
-from autogen_agentchat.base import TaskResult
 from autogen_agentchat.conditions import ExternalTermination, TextMentionTermination
-from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.teams import SelectorGroupChat
 from autogen_agentchat.ui import Console
-from autogen_core import CancellationToken
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-from autogen import Agent, ConversableAgent, UserProxyAgent, config_list_from_dotenv
-from autogen.agentchat.contrib.capabilities.vision_capability import VisionCapability
-from autogen.agentchat.contrib.img_utils import get_pil_image, pil_to_data_uri
-from autogen.agentchat.contrib.multimodal_conversable_agent import MultimodalConversableAgent
-from autogen.code_utils import content_str
+from autogen_core.model_context import UnboundedChatCompletionContext
 from autogen_core.tools import FunctionTool
 from autogen_core.models import ModelFamily
+from autogen_core.models import AssistantMessage, LLMMessage, ModelFamily
+from autogen_ext.models.ollama import OllamaChatCompletionClient
+
+
+class ReasoningModelContext(UnboundedChatCompletionContext):
+    """A model context for reasoning models."""
+
+    async def get_messages(self) -> List[LLMMessage]:
+        messages = await super().get_messages()
+        # Filter out thought field from AssistantMessage.
+        messages_out: List[LLMMessage] = []
+        for message in messages:
+            if isinstance(message, AssistantMessage):
+                message.thought = None
+            messages_out.append(message)
+        return messages_out
 
 class Auto_gen:
     def __init__(self,discovery: Discovery) -> None:
@@ -33,7 +43,7 @@ class Auto_gen:
         self.bot_status = "未取得"
         self.load_tool()
         self.load_agents()
-
+    
     def deepseek_client(self, model_name: str = "deepseek-reasoner") -> OpenAIChatCompletionClient:
         """Creates an OpenAIChatCompletionClient configured for DeepSeek models."""
         api_key = os.getenv("DEEPSEEK_API_KEY")
@@ -43,11 +53,10 @@ class Auto_gen:
         # Based on DeepSeek API documentation and common capabilities
         model_info = {
             "vision": False,            # Assuming standard chat model, adjust if vision model is used
-            "function_calling": True,   # Supported according to DeepSeek docs
-            "json_output": True,        # Supported according to DeepSeek docs (check specific model if needed)
-            "structured_output": False, # Assuming not directly supported via Pydantic models in this client
-            "multiple_system_messages": True, # Assuming support, adjust if needed
-            "family": ModelFamily.UNKNOWN # Add the required family field
+            "function_calling": False,   # Supported according to DeepSeek docs
+            "json_output": False,        # Supported according to DeepSeek docs (check specific model if needed)
+            "structured_output": True, # Assuming not directly supported via Pydantic models in this client
+            "family": ModelFamily.R1 # Add the required family field
         }
 
         client = OpenAIChatCompletionClient(
@@ -63,6 +72,20 @@ class Auto_gen:
         self.model_client_o1 = OpenAIChatCompletionClient(model="o1")
         self.model_client_4o = OpenAIChatCompletionClient(model="gpt-4o")
         self.model_client_deepseek = self.deepseek_client(model_name="deepseek-reasoner")
+
+        # Add the new gpt-4o-mini client
+        self.model_client_o4_mini = OpenAIChatCompletionClient(
+            model="gpt-4o-mini",
+            api_key=os.getenv("OPENAI_API_KEY"), # Assuming standard OpenAI API key
+            model_info={
+                "vision": False,            # gpt-4o-mini does not have vision capabilities
+                "function_calling": True,   # OpenAI models generally support function calling
+                "json_output": True,        # OpenAI models generally support JSON mode
+                "structured_output": False, # Assuming not directly supported via Pydantic models
+                "multiple_system_messages": True, # Assuming support
+                "family": ModelFamily.UNKNOWN
+            }
+        )
 
         # Define the new consolidated agent
         self.BotInformationAgent = AssistantAgent(
