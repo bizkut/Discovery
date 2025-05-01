@@ -2738,7 +2738,7 @@ class Skills:
         if self.bot.game.gameMode != 'creative':
             try:
                 # 適切なツールを装備
-                await self.bot.tool.equipForBlock(block)
+                self.bot.tool.equipForBlock(block)
                 
                 # 適切なツールを持っているか確認
                 item_id = None
