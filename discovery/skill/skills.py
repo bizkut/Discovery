@@ -649,20 +649,6 @@ class Skills:
                 if item.name == item_name:
                     block_item = item
                     break
-                    
-            # クリエイティブモードでブロックがない場合は取得
-            if not block_item and self.bot.game.gameMode == 'creative' and not (hasattr(self.bot, 'restrict_to_inventory') and self.bot.restrict_to_inventory):
-                try:
-                    # スロット36が最初のホットバースロット
-                    await self.bot.creative.setInventorySlot(36, self._make_item(item_name, 1))
-                    # 再度ブロックを探す
-                    for item in self.bot.inventory.items():
-                        if item.name == item_name:
-                            block_item = item
-                            break
-                except Exception as e:
-                    self.bot.chat(f"クリエイティブモードでのアイテム取得エラー: {e}")
-                    print(f"クリエイティブモードでのアイテム取得エラー: {e}")
             
             # ブロックがない場合は失敗
             if not block_item:
@@ -762,8 +748,9 @@ class Skills:
             ):
                 # プレイヤーが設置位置と重なっている場合、少し離れる
                 try:
-                    if hasattr(self.pathfinder.goals, 'GoalNear') and hasattr(self.pathfinder.goals, 'GoalInvert'):
-                        self.move_to_position(target_block.position.x, target_block.position.y, target_block.position.z, 2)
+                    goal = self.pathfinder.goals.GoalNear(target_block.position.x, target_block.position.y, target_block.position.z, 2)
+                    inverted_goal = self.pathfinder.goals.GoalInvert(goal)
+                    self.bot.pathfinder.goto(inverted_goal)
                 except Exception as e:
                     result["message"] = f"設置位置から離れる際にエラーが発生しました: {str(e)}"
                     result["error"] = "movement_error"
@@ -2097,7 +2084,7 @@ class Skills:
                 furnace_block.position.x, 
                 furnace_block.position.y, 
                 furnace_block.position.z, 
-                4
+                2
             )
             
         # かまどを開く
