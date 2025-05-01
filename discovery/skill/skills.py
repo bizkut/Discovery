@@ -773,8 +773,7 @@ class Skills:
             # ブロックが遠すぎる場合は近づく
             if self.bot.entity.position.distanceTo(target_block.position) > 4.5:
                 try:
-                    if hasattr(self.pathfinder.goals, 'GoalNear'):
-                        self.move_to_position(target_block.position.x, target_block.position.y, target_block.position.z, 4)
+                    await self.move_to_position(target_block.position.x, target_block.position.y, target_block.position.z, 4)
                 except Exception as e:
                     result["message"] = f"ブロックに近づく際にエラーが発生しました: {str(e)}"
                     result["error"] = "movement_error"
