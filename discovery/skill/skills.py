@@ -262,7 +262,7 @@ class Skills:
         print(inventory_counts)
         return inventory_counts
     
-    async def get_nearest_block(self, block_name, max_distance=1000, canMove=True):
+    async def get_nearest_block(self, block_name, max_distance=1000):
         """
         BOTの周囲で指定されたブロック名のブロックを検索し、最も近いブロックの情報を返します。
         
@@ -311,20 +311,23 @@ class Skills:
                 return None
                 
             # ブロックを検索
-            blocks = self.bot.findBlocks({
+            blocks_pos = self.bot.findBlocks({
                 'point': self.bot.entity.position,
                 'matching': block_id,
                 'maxDistance': max_distance,
                 'count': 20
             })
-            for block in blocks:
-                if canMove:
-                    canMove = await self.move_to_position(block.x, block.y, block.z, onlyCheckPath=True)
-                    if not canMove["success"]:
-                        await asyncio.sleep(0.1)
-                        continue
-                return self.bot.blockAt(block)
-            return None
+            distance_min = None
+            block_min = None
+            for block_pos in blocks_pos:
+                block = self.bot.blockAt(block_pos)
+                distance = self.bot.entity.position.distanceTo(block_pos)
+                if distance_min is None or distance < distance_min:
+                    distance_min = distance
+                    block_min = block
+            if distance_min is None:
+                return None
+            return block_min
             
         except Exception as e:
             print(f"ブロック検索中にエラーが発生しました: {str(e)}")
@@ -1678,8 +1681,7 @@ class Skills:
                 break
                 
             block = blocks[0]
-            block_pos = block.position
-            # 適切なツールを装備
+            # 適切なツールを装備a
             self.bot.tool.equipForBlock(block)
             if self.bot.heldItem:
                 held_item_id = self.bot.heldItem.type
@@ -1692,16 +1694,18 @@ class Skills:
                 print(result["message"])
                 return result
             try:
-                move_to_result = await self.move_to_position(block_pos.x, block_pos.y, block_pos.z, min_distance=2)
-                if move_to_result["success"]:
-                    self.bot.collectBlock.collect(block)
-                    collected += 1
-                    await self.auto_light()
-                else:
-                    result["message"] = f"{block_name}の収集に失敗: {move_to_result['message']}"
-                    result["error"] = "move_to_failed"
+                move_result = await self.move_to_position(block.position.x, block.position.y, block.position.z, min_distance=1,dontcreateflow=False)
+                if not move_result["success"]:
+                    result["message"] = f"{block_name}の収集に失敗: {move_result['message']}"
+                    result["error"] = "move_failed"
                     print(result["message"])
                     return result
+                else:
+                    self.bot.dig(block)
+                    await asyncio.sleep(0.3)
+                    await self.pickup_nearby_items(item_name=block_name)
+                    collected += 1
+                    await self.auto_light()
             except Exception as e:
                 if str(e) == 'NoChests':
                     result["message"] = f"{block_name}の収集に失敗: インベントリが一杯で、保管場所がありません。"
@@ -1864,7 +1868,7 @@ class Skills:
         # 既に目標位置に十分近い場合は移動をスキップ
         if distance_to_target <= min_distance:
             result["success"] = True
-            result["message"] = f"既に目標位置 {x}, {y}, {z} の近く（{distance_to_target:.2f}ブロック）にいます。移動をスキップします。"
+            result["message"] = f"{x}, {y}, {z} に十分近いため移動をスキップします。"
             # positionを更新
             result["position"] = { "x": current_pos.x, "y": current_pos.y, "z": current_pos.z }
             print(result["message"])
@@ -1879,8 +1883,6 @@ class Skills:
                 return result
 
         try:
-            # 目標位置を設定
-            goal = self.pathfinder.goals.GoalNear(x, y, z, min_distance)
             # パスファインダーの動きを設定
             movements = self.pathfinder.Movements(self.bot)
             movements.canDig = canDig
@@ -1889,6 +1891,8 @@ class Skills:
             movements.canPlaceOn = canPlaceOn
             movements.allow1by1towers = allow1by1towers
             self.bot.pathfinder.setMovements(movements)
+            # 目標位置を設定
+            goal = self.pathfinder.goals.GoalNear(x, y, z, min_distance)
             # パスを取得
             path = self.bot.pathfinder.getPathTo(movements,goal)
             if path.status == "error":
@@ -1907,7 +1911,7 @@ class Skills:
                 return result
             # 目標に向かう
             self.bot.pathfinder.setGoal(goal)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 
             last_position = None
             stuck_time = 0
@@ -1919,7 +1923,7 @@ class Skills:
                 if (current_time - move_start_time) > move_timeout:
                     print(f"移動がタイムアウトしました ({move_timeout}秒)。")
                     self.bot.pathfinder.setGoal(None) # 目的地をリセット
-                    await asyncio.sleep(0.1) # ゴールリセットの反映を待つ
+                    await asyncio.sleep(1) # ゴールリセットの反映を待つ
                     result["success"] = False
                     result["message"] = f"移動がタイムアウトしました ({move_timeout}秒)。"
                     result["error"] = "move_timeout"
@@ -1957,7 +1961,7 @@ class Skills:
                         if free_space is None:
                             self.bot.chat("近くに一時退避できるスペースが見つかりません。移動を中断します。")
                             self.bot.pathfinder.setGoal(None) # 目的地リセット
-                            await asyncio.sleep(0.1)
+                            await asyncio.sleep(1)
                             result["success"] = False
                             result["message"] = "スタック解消中に退避スペースが見つからず、移動を中断しました。"
                             result["error"] = "stuck_no_space"
@@ -1970,7 +1974,7 @@ class Skills:
                             # self.bot.chat(f"/tp bot {free_space.x} {free_space.y} {free_space.z}")
                             self.bot.chat("一時退避を試みましたがスタックが解消できませんでした。移動を中断します。")
                             self.bot.pathfinder.setGoal(None)
-                            await asyncio.sleep(0.1)
+                            await asyncio.sleep(1)
                             result["success"] = False
                             result["message"] = "スタック解消に失敗しました。移動を中断します。"
                             result["error"] = "stuck_unresolved"
@@ -1981,12 +1985,14 @@ class Skills:
                             # 一時的な目標地点に移動
                             temp_goal = self.pathfinder.goals.GoalNear(free_space.x, free_space.y, free_space.z, 0)
                             self.bot.pathfinder.setGoal(temp_goal)
+                            await asyncio.sleep(1)
                             temp_free_space = free_space
                             self.bot.chat(f"一時的に {free_space.x:.1f}, {free_space.y:.1f}, {free_space.z:.1f} へ移動します。")
                             await asyncio.sleep(2) # 一時目標への移動を待つ
 
                         # 元の目標地点に再設定
                         self.bot.pathfinder.setGoal(goal)
+                        await asyncio.sleep(1)
                         self.bot.chat("元の目標への移動を再開します。")
                         await asyncio.sleep(0.5)
                         stuck_time = 0
@@ -1996,17 +2002,21 @@ class Skills:
                 await asyncio.sleep(0.5) # ループのインターバル
             # 移動完了後、パスファインダーのゴールをリセット
             self.bot.pathfinder.setGoal(None)
+            await asyncio.sleep(1)
             # --- 移動完了後の処理 ---
             bot_x, bot_y, bot_z = await self.get_bot_position()
             # 目標位置との距離を計算 (インデント修正)
-            final_distance = ((bot_x - x) ** 2 + (bot_y - y) ** 2 + (bot_z - z) ** 2) ** 0.5
-            if final_distance <= min_distance:
+            final_distance_xy = ((bot_x - x) ** 2 + (bot_z - z) ** 2) ** 0.5
+            final_distance_y = abs(bot_y - y) - 2
+            if final_distance_xy <= min_distance:
                 result["success"] = True
-                result["message"] = f"目標位置 {x}, {y}, {z} の {min_distance} ブロック以内に到達しました (距離: {final_distance:.2f})。"
+                result["message"] = f" {x}, {y}, {z} に到達しました"
+                
             else:
+                print(f"final_distance_xy: {final_distance_xy}\nfinal_distance_y: {final_distance_y}\nmin_distance: {min_distance}\n")
                 # isMoving()がFalseでも距離が遠い場合 (パスの終点が目標から遠いなど)
                 result["success"] = False
-                result["message"] = f"移動は停止しましたが、目標位置 {x}, {y}, {z} に到達できませんでした。現在の位置は {bot_x:.1f}, {bot_y:.1f}, {bot_z:.1f} (目標までの距離: {final_distance:.2f}) です。"
+                result["message"] = f"{x}, {y}, {z} に到達できませんでした。現在の位置は {bot_x:.1f}, {bot_y:.1f}, {bot_z:.1f}  です。"
                 result["error"] = "move_failed"
             result["position"] = {
                 "x": bot_x,
@@ -2588,10 +2598,12 @@ class Skills:
         print(result)
         return result
         
-    async def pickup_nearby_items(self):
+    async def pickup_nearby_items(self, item_name=None,distance=10):
         """
         周囲のドロップアイテムを拾います。
-        
+        Args:
+            item_name (str, optional): 拾うアイテムの名前。Noneの場合は周囲のすべてのドロップアイテムを拾います。
+            distance (int, optional): ドロップアイテムを探す範囲。デフォルトは8
         Returns:
             dict: 結果を含む辞書
                 - success (bool): アイテムを拾った場合はTrue
@@ -2603,64 +2615,56 @@ class Skills:
             "message": ""
         }
         
-        distance = 8
-        
         # 最も近いアイテムを取得する関数
         def get_nearest_item():
-            nearest_item = None
-            min_distance = float('inf')
+            nearest_item_list = []
             
             # bot.entities はエンティティの辞書やリストと仮定
             for entity_id in self.bot.entities:
                 entity = self.bot.entities[entity_id]
                 if hasattr(entity, 'name') and entity.name == 'item':
+                    drop_item_name = self._get_item_name(self._get_item_id_from_entity(entity))
+                    if not item_name is None and item_name != drop_item_name:
+                        continue
                     # 距離計算
                     dx = self.bot.entity.position.x - entity.position.x
                     dy = self.bot.entity.position.y - entity.position.y
                     dz = self.bot.entity.position.z - entity.position.z
                     current_distance = (dx*dx + dy*dy + dz*dz) ** 0.5
                     
-                    if current_distance < distance and current_distance < min_distance:
-                        min_distance = current_distance
-                        nearest_item = entity
-            return nearest_item
+                    if current_distance < distance:
+                        nearest_item_list.append(entity)
+            return nearest_item_list
 
         # 最も近いアイテムを取得
-        nearest_item = get_nearest_item()
+        nearest_item_list = get_nearest_item()
+        if nearest_item_list == []:
+            result["message"] = "周囲のドロップアイテムはありません。"
+            return result
+        
         item_list = []
-        if nearest_item:
-            while nearest_item:
-                # アイテムに近づく
-                if hasattr(self.bot.pathfinder, 'setMovements') and hasattr(self.pathfinder, 'Movements') and hasattr(self.pathfinder.goals, 'GoalFollow'):
-                    await self.move_to_position(nearest_item.position.x, nearest_item.position.y, nearest_item.position.z, 0.8)
-                # アイテムIDを取得
-                item_id = self._get_item_id_from_entity(nearest_item)
-                item_name = self._get_item_name(item_id)
-                item_list.append(item_name)
-                # 少し待機してアイテムが拾われるのを待つ
-                await asyncio.sleep(0.2)
-                
-
-                # 前のアイテムを保存
-                prev_item = nearest_item
-                
-                # 新しい最寄りのアイテムを取得
-                nearest_item = get_nearest_item()
-                # 同じアイテムが最も近い場合は終了（拾えなかった）
-                if prev_item == nearest_item:
+        for nearest_item in nearest_item_list:
+            # アイテムに近づく
+            block_pos = self.bot.blockAt(nearest_item.position)
+            print(f"block_pos: {block_pos}")
+            if block_pos:
+                move_result = await self.move_to_position(block_pos.position.x, block_pos.position.y, block_pos.position.z, 1)
+                if not move_result["success"]:
                     break
-                    
-            result["success"] = True
-            item_str = ", ".join(item_list)
-            result["message"] = f"{item_str}を拾いました。"
-            self.bot.chat(result["message"])
-            print(result)
-            return result
-        else:
-            result["message"] = "ドロップアイテムはありません。"
-            self.bot.chat(result["message"])
-            print(result)
-            return result
+
+            # アイテムIDを取得
+            item_id = self._get_item_id_from_entity(nearest_item)
+            item_name = self._get_item_name(item_id)
+            item_list.append(item_name)
+            # 少し待機してアイテムが拾われるのを待つ
+            await asyncio.sleep(0.2)
+                
+        result["success"] = True
+        item_str = ", ".join(item_list)
+        result["message"] = f"{item_str}を拾いました。"
+        self.bot.chat(result["message"])
+        print(result)
+        return result
         
     async def break_block_at(self, x, y, z):
         """
