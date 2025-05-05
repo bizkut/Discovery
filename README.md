@@ -5,6 +5,12 @@
 [English](README.md) | [日本語](README-jp.md)
 
 ![MinecraftAI](https://github.com/Mega-Gorilla/Discovery/blob/main/images/MinecraftAI.png?raw=true)
+
+
+# Demo
+
+[![Discovery Demo](https://img.youtube.com/vi/vxqvB3isKn4/0.jpg)](https://youtube.com/live/vxqvB3isKn4?feature=share)
+
 </div>
 
 ## About Discovery
