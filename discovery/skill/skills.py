@@ -20,7 +20,7 @@ class Skills:
 
     async def get_bot_position(self):
         """
-        ボットの現在位置を取得します。
+        ボットの現在位置を取得します。座標はtuple[float, float, float]で返されます。
 
         Returns:
             tuple[float, float, float]: ボットの位置のx, y, z座標を含むtuple。 
@@ -319,6 +319,7 @@ class Skills:
             })
             distance_min = None
             block_min = None
+            # 本当に距離計算できてる？
             for block_pos in blocks_pos:
                 block = self.bot.blockAt(block_pos)
                 distance = self.bot.entity.position.distanceTo(block_pos)
@@ -427,7 +428,7 @@ class Skills:
         
         このメソッドは以下の処理を行います：
         1. 指定されたアイテムのレシピを検索します
-        2. 取得したレシピが、クラフトテーブルが必要な場合、クラフティングテーブルを探すか設置します
+        2. 取得したレシピが、クラフトテーブルが必要な場合、インベントリのクラフティングテーブルを設置するか近くのクラフトテーブルを探します
         3. 必要な材料がインベントリにあるか確認します
         4. クラフティングを実行します
         5. 作成したアイテムの結果と詳細を返します
@@ -671,7 +672,7 @@ class Skills:
                 result["message"] = f"座標({target_block.position})には既に{target_block.name}があります"
                 
                 # 破壊を試みる
-                break_result = await self.break_block_at(x, y, z)
+                break_result = await self._break_block_at(x, y, z)
                 if not break_result["success"]:
                     result["message"] = f"ブロックの設置場所に{target_block.name}があり、破壊できませんでした"
                     result["error"] = "space_occupied"
@@ -1575,6 +1576,7 @@ class Skills:
         """
         指定された名前のブロックを指定個数、採掘・収集します。
         最も近くにある安全に採掘可能なブロックを探し、適切なツールを装備して収集を試みます。
+        座標がわからない特定のブロックの採掘や収集に向いてます。
         インベントリがいっぱいの場合や適切なツールがない場合などは失敗します。
 
         Args:
@@ -1639,7 +1641,7 @@ class Skills:
         for i in range(num):
             blocks = []
             for btype in blocktypes:
-                found_block = await self.get_nearest_block(btype, 64)
+                found_block = await self.get_nearest_block(btype, 500)
                 await asyncio.sleep(0.1)
                 if found_block:
                     blocks.append(found_block)
@@ -1795,14 +1797,10 @@ class Skills:
                                dontMineUnderFaillingBlock=True,
                                dontMoveUnderLiquid=True,
                                onlyCheckPath=False,
-                               move_timeout=60): # タイムアウト引数を追加
+                               move_timeout=180): # タイムアウト引数を追加
         """
-        指定された位置に移動します。
-        現在位置と目標位置が十分に近い場合（min_distance以内）は移動をスキップします。
-        移動中にスタックを検出した場合は、一時的な目標地点に移動して解消を試みます。
-        パスを取得できない場合は、目標位置に到達できる経路を生成できませんでしたというメッセージを返します。
-        dontMoveUnderLiquidがTrueの場合、移動先が液体ブロックの場合、エラーを返します。
-        指定時間内に移動が完了しない場合はタイムアウトします。
+        指定された位置に移動します。canDig=Trueの場合、障害となるブロックを採掘しながら移動します。
+        指定時間内に移動が完了しない、または到達できない場合は場合はタイムアウトします。
 
         Args:
             x (float): 移動先のX座標
@@ -1897,15 +1895,15 @@ class Skills:
             stuck_time = 0
             temp_free_space = None
             move_start_time = asyncio.get_event_loop().time() # 移動開始時間を記録
-            while self.bot.pathfinder.isMoving():
+            while self.bot.pathfinder.isMoving() or self.bot.pathfinder.isMining() or self.bot.pathfinder.isBuilding():
                 # --- タイムアウトチェック ---
                 current_time = asyncio.get_event_loop().time()
                 if (current_time - move_start_time) > move_timeout:
-                    print(f"移動がタイムアウトしました ({move_timeout}秒)。")
+                    print(f"タイムアウトしました。移動可能最大時間を超過しました。動作を途中で停止します ({move_timeout}秒)。")
                     self.bot.pathfinder.setGoal(None) # 目的地をリセット
                     await asyncio.sleep(1) # ゴールリセットの反映を待つ
                     result["success"] = False
-                    result["message"] = f"移動がタイムアウトしました ({move_timeout}秒)。"
+                    result["message"] = f"タイムアウトしました。移動可能最大時間を超過しました。動作を途中で停止します ({move_timeout}秒)。"
                     result["error"] = "move_timeout"
                     # 現在位置を記録
                     current_pos_timeout = await self.get_bot_position()
@@ -1988,7 +1986,7 @@ class Skills:
             # 目標位置との距離を計算 (インデント修正)
             final_distance_xy = ((bot_x - x) ** 2 + (bot_z - z) ** 2) ** 0.5
             final_distance_y = abs(bot_y - y) - 2
-            if final_distance_xy <= min_distance:
+            if final_distance_xy <= min_distance+1:
                 result["success"] = True
                 result["message"] = f" {x}, {y}, {z} に到達しました"
                 
@@ -1996,7 +1994,7 @@ class Skills:
                 print(f"final_distance_xy: {final_distance_xy}\nfinal_distance_y: {final_distance_y}\nmin_distance: {min_distance}\n")
                 # isMoving()がFalseでも距離が遠い場合 (パスの終点が目標から遠いなど)
                 result["success"] = False
-                result["message"] = f"{x}, {y}, {z} に到達できませんでした。現在の位置は {bot_x:.1f}, {bot_y:.1f}, {bot_z:.1f}  です。"
+                result["message"] = f"{x}, {y}, {z} に到達できませんでした。現在の位置は {bot_x:.1f}, {bot_y:.1f}, {bot_z:.1f}  です。一時的なエラーなので、再度実行することで到達できる可能性があります"
                 result["error"] = "move_failed"
             result["position"] = {
                 "x": bot_x,
@@ -2627,7 +2625,7 @@ class Skills:
             # アイテムに近づく
             block_pos = self.bot.blockAt(nearest_item.position)
             if block_pos:
-                move_result = await self.move_to_position(block_pos.position.x, block_pos.position.y, block_pos.position.z, 1)
+                move_result = await self.move_to_position(block_pos.position.x, block_pos.position.y, block_pos.position.z, 0.5)
                 if not move_result["success"]:
                     break
 
@@ -2645,9 +2643,10 @@ class Skills:
         print(result)
         return result
         
-    async def break_block_at(self, x, y, z):
+    async def _break_block_at(self, x, y, z):
         """
-        指定された座標のブロックを破壊します。現在装備しているアイテムを使用します。
+        指定された座標のブロックを破壊します。ツールは自動選択されます。
+        _break_block_atはダイヤモンドなどの'座標がわからない'特定のブロックを採掘するために用いないでください。(collect_block関数を用いてください)
         
         Args:
             x (float): 破壊するブロックのX座標
@@ -2663,7 +2662,7 @@ class Skills:
                 - error (str, optional): エラーがある場合のエラーコード
         
         Example:
-            >>> await skills.break_block_at(100, -61, 100)
+            >>> await skills._break_block_at(100, -61, 100)
         """
         self.bot.chat(f"{x}, {y}, {z}のブロックを破壊します。")
         print(f"{x}, {y}, {z}のブロックを破壊します。")
@@ -3093,6 +3092,7 @@ class Skills:
                 'maxDistance': max_distance,
                 'count': 10
             })
+            liquid_block = None
             for block in blocks:
                 block_info = self.bot.blockAt(block)
                 if block_info.metadata == 0:
