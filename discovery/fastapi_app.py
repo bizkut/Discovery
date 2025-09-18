@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 import uvicorn
 import asyncio
 from discovery import Discovery
-from skill.skills import Skills
+from discovery.skill.skills import Skills
 from contextlib import asynccontextmanager
 import math
 from javascript import require # Vec3 を使う可能性のため (skills.pyの依存関係)
