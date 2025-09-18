@@ -39,4 +39,5 @@ RUN npm install \
         prismarine-viewer \
         canvas
 
+ENV NODE_PATH=/app/mineflayer/node_modules
 WORKDIR /app
