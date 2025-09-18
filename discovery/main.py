@@ -1,5 +1,5 @@
-from discovery import Discovery
-from autoggen import Auto_gen
+from .discovery import Discovery
+from .autoggen import Auto_gen
 import asyncio
 import traceback # トレースバック取得のため
 
