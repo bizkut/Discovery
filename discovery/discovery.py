@@ -19,6 +19,11 @@ from playwright.async_api import async_playwright
 
 class Discovery:
     def __init__(self):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(script_dir)
+        node_modules_path = os.path.join(project_root, 'mineflayer', 'node_modules')
+        os.environ['NODE_PATH'] = node_modules_path
+
         load_dotenv()
         self.load_env()
         self.mineflayer = require("mineflayer")
@@ -40,8 +45,6 @@ class Discovery:
         self.prismarine_viewer_port = os.getenv("PRISMARINE_VIEWER_PORT", 3000)
 
     def load_plugins(self):
-        # Node.jsのモジュールパスを設定（mineflayerディレクトリのnode_modulesを参照）
-        os.environ['NODE_PATH'] = "/workspaces/Voyager/mineflayer/node_modules"
         # pathfinder
         self.pathfinder = require("mineflayer-pathfinder")
         self.web_inventory = require("mineflayer-web-inventory")
