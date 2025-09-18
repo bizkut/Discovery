@@ -2,7 +2,7 @@ from javascript import require, On, Once, AsyncTask, once, off
 from dotenv import load_dotenv
 import os
 import asyncio
-from skill.skills import Skills
+from .skill.skills import Skills
 import webbrowser
 import sys
 import math
