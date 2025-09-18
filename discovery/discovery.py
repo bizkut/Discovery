@@ -1,6 +1,11 @@
+import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+node_modules_path = os.path.join(project_root, 'mineflayer', 'node_modules')
+os.environ['NODE_PATH'] = node_modules_path
+
 from javascript import require, On, Once, AsyncTask, once, off
 from dotenv import load_dotenv
-import os
 import asyncio
 from .skill.skills import Skills
 import webbrowser
@@ -19,11 +24,6 @@ from playwright.async_api import async_playwright
 
 class Discovery:
     def __init__(self):
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(script_dir)
-        node_modules_path = os.path.join(project_root, 'mineflayer', 'node_modules')
-        os.environ['NODE_PATH'] = node_modules_path
-
         load_dotenv()
         self.load_env()
         self.mineflayer = require("mineflayer")
